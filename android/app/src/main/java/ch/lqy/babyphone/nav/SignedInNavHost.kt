@@ -1,6 +1,7 @@
 package ch.lqy.babyphone.nav
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -91,6 +92,11 @@ fun SignedInNavHost(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(insets)
+
+                // Says the padding above has already dealt with the status bar. Without it a
+                // screen pushed over this one — Connect, Account — puts its own bar below a
+                // second copy of the same inset, and the gap is twice what it should be.
+                .consumeWindowInsets(insets)
         ) {
             composable<Destination.Monitor> {
                 MonitorScreen(onGoToDevices = { navController.switchTab(Tab.Devices) })
