@@ -46,7 +46,7 @@ class LocalSession(context: Context) {
             ownerId = Owner,
             ownerName = "This household",
             publicKey = it.publicKey,
-            keyFingerprint = fingerprint(it.publicKey)
+            keyFingerprint = fingerprintOf(it.publicKey)
         )
     }
 
@@ -64,16 +64,6 @@ class LocalSession(context: Context) {
         runCatching { json.decodeFromString<List<Peer>>(prefs.getString(Peers, "[]").orEmpty()) }
             .getOrDefault(emptyList())
 
-    /** The same shape the backend produces, so one list can hold phones from either. */
-    private fun fingerprint(publicKey: String): String {
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(publicKey.toByteArray())
-            .take(6)
-            .joinToString("") { "%02x".format(it) }
-
-        return (0 until 3).joinToString(" ") { digest.substring(it * 4, (it + 1) * 4) }
-    }
-
     @Serializable
     private data class Peer(val id: String, val name: String, val publicKey: String)
 
@@ -86,4 +76,17 @@ class LocalSession(context: Context) {
         /** One household, so every phone in the list belongs to it. */
         const val Owner = "local"
     }
+}
+
+/**
+ * The same digest the backend produces, so a key looks the same whoever is describing it —
+ * 96 bits, in groups of four, for two people to read to each other.
+ */
+fun fingerprintOf(publicKey: String): String {
+    val hex = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(publicKey.toByteArray())
+        .take(12)
+        .joinToString("") { "%02x".format(it) }
+
+    return (0 until hex.length / 4).joinToString(" ") { hex.substring(it * 4, (it + 1) * 4) }
 }

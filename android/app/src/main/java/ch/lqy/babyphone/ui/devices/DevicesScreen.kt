@@ -222,7 +222,7 @@ private fun DeviceCard(
                 // Reinstalling the app makes a new identity and leaves the old registration
                 // behind, identical in name to the live one. When every row is "Google Pixel 9",
                 // when it was last heard from is the only thing that tells them apart.
-                if (!item.isThisPhone) {
+                if (!item.isThisPhone && device.lastSeenAt != null) {
                     val silent = lastSeen(device.lastSeenAt)
                     Text(
                         text = silent.text,

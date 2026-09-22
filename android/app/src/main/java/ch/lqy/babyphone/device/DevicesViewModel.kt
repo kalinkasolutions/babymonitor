@@ -227,6 +227,7 @@ class DevicesViewModel(application: Application) : AndroidViewModel(application)
 
     /** This phone, which no server described because there is none. */
     private fun thisPhone(): DeviceListItem {
+        val battery = readBattery(getApplication())
         val device = DeviceDto(
             id = local.deviceId,
             name = local.name,
@@ -234,7 +235,10 @@ class DevicesViewModel(application: Application) : AndroidViewModel(application)
             isOnline = true,
             ownerId = LocalOwner,
             ownerName = "This household",
-            publicKey = thisPhoneKey
+            publicKey = thisPhoneKey,
+            keyFingerprint = fingerprintOf(thisPhoneKey),
+            batteryPercent = battery.percent,
+            isCharging = battery.isCharging
         )
 
         return DeviceListItem(device, KeyTrust.Confirmed, isThisPhone = true, isMine = true)
