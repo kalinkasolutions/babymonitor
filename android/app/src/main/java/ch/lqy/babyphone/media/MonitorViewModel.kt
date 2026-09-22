@@ -24,6 +24,7 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     fun toggleMute() = calls.toggleMute()
     fun showVideo(on: Boolean) = calls.showVideo(on)
     fun setRelayOnly(value: Boolean) = calls.setRelayOnly(value)
+    fun setStartWithVideoOff(value: Boolean) = calls.setStartWithVideoOff(value)
     fun setAlarm(settings: NoiseAlarmSettings) = calls.setAlarm(settings)
 
     /** Told by the screen, so the alarm knows whether anybody is already looking. */
@@ -41,6 +42,7 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     val retrying = calls.retrying
     val path = calls.path
     val relayOnly = calls.relayOnly
+    val startWithVideoOff = calls.startWithVideoOff
 
     fun askForLight(mode: LightMode, brightness: Float, seconds: Int = 0) =
         calls.askForLight(mode, brightness, seconds)

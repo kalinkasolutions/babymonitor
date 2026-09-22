@@ -175,7 +175,8 @@ A link decides visibility; trust is decided separately, on the phones:
 - [x] Ongoing notification with the current state and a stop action
 
 ### Video
-- [x] Audio-only by default; video asked for per call by the observing phone
+- [x] Audio-only by default, as a setting: Listen starts without the camera and Watch always
+      brings it, so the cheap call is the one you reach for without thinking
 - [x] Turn video on and off mid-call — by starting and stopping the camera behind a track
       that is always negotiated, so it needs no renegotiation and never interrupts the audio
 - [x] Remotely start video on a locked recording phone, without touching it, once it has

@@ -114,6 +114,11 @@ class CallCenter private constructor(private val context: Context) {
     /** Which way the media is going: the WiFi, the internet, or the relay. */
     val path: StateFlow<CallPath> = _path.asStateFlow()
 
+    private val _startWithVideoOff = MutableStateFlow(callPreferences.startWithVideoOff)
+
+    /** Whether Listen starts without the camera. */
+    val startWithVideoOff: StateFlow<Boolean> = _startWithVideoOff.asStateFlow()
+
     private val _relayOnly = MutableStateFlow(callPreferences.relayOnly)
 
     /** Whether calls are being forced through the relay, which only a test ever wants. */
@@ -698,6 +703,11 @@ class CallCenter private constructor(private val context: Context) {
             delay(wait)
             dispatch(CallEvent.Listen(peer, video))
         }
+    }
+
+    fun setStartWithVideoOff(value: Boolean) {
+        callPreferences.startWithVideoOff = value
+        _startWithVideoOff.value = value
     }
 
     fun setRelayOnly(value: Boolean) {

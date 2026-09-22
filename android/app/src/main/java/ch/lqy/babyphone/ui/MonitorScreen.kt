@@ -70,6 +70,7 @@ fun MonitorScreen(
     val peerStatus by viewModel.peerStatus.collectAsState()
     val noise by viewModel.noise.collectAsState()
     val alarm by viewModel.alarm.collectAsState()
+    val startWithVideoOff by viewModel.startWithVideoOff.collectAsState()
     val arming by viewModel.arming.collectAsState()
     val silent by viewModel.silent.collectAsState()
     val retrying by viewModel.retrying.collectAsState()
@@ -225,7 +226,7 @@ fun MonitorScreen(
                     ListenRow(
                         device = device,
                         online = device.id in online,
-                        onListen = { viewModel.listenTo(device.id) },
+                        onListen = { viewModel.listenTo(device.id, video = !startWithVideoOff) },
                         onWatch = { viewModel.listenTo(device.id, video = true) }
                     )
                 }

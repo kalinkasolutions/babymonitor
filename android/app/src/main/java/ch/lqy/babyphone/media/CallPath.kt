@@ -29,7 +29,17 @@ class CallPreferences(context: Context) {
         get() = prefs.getBoolean(RelayOnly, false)
         set(value) = prefs.edit { putBoolean(RelayOnly, value) }
 
+    /**
+     * Whether a call starts without the camera. On by default: audio costs a fraction of the
+     * battery and the bandwidth, and the picture is worth nothing in a dark room anyway until
+     * somebody turns a light on. Watch always brings the camera; this is what plain Listen does.
+     */
+    var startWithVideoOff: Boolean
+        get() = prefs.getBoolean(VideoOff, true)
+        set(value) = prefs.edit { putBoolean(VideoOff, value) }
+
     private companion object {
         const val RelayOnly = "relayOnly"
+        const val VideoOff = "startWithVideoOff"
     }
 }

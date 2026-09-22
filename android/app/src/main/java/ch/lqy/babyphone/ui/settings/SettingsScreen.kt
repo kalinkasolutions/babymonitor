@@ -38,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.lqy.babyphone.BuildConfig
 import androidx.compose.runtime.remember
-import ch.lqy.babyphone.device.ConnectionViewModel
 import ch.lqy.babyphone.device.LocalSession
 import ch.lqy.babyphone.media.MonitorViewModel
 import ch.lqy.babyphone.media.NoiseAlarmSettings
@@ -52,14 +51,13 @@ fun SettingsScreen(
     serverUrl: String,
     onServerUrlChange: (String) -> Unit,
     onSignedOut: () -> Unit = {},
-    viewModel: ConnectionViewModel = viewModel(),
     monitor: MonitorViewModel = viewModel()
 ) {
     var url by rememberSaveable { mutableStateOf(serverUrl) }
-    val ice by viewModel.ice.collectAsState()
     val context = LocalContext.current
     val alarm by monitor.alarm.collectAsState()
     val relayOnly by monitor.relayOnly.collectAsState()
+    val startWithVideoOff by monitor.startWithVideoOff.collectAsState()
     val local = remember { LocalSession(context) }
 
     Column(
@@ -107,8 +105,22 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(24.dp))
         SettingsSection("Video")
-        Pending("Start with video off")
-        Pending("Light for a dark room: night light, screen or torch")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Start with video off", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = "Listen starts without the camera; Watch always turns it on. Audio " +
+                        "costs a fraction of the battery, and a dark room shows nothing anyway " +
+                        "until the light is on.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = startWithVideoOff,
+                onCheckedChange = monitor::setStartWithVideoOff
+            )
+        }
 
         Spacer(Modifier.height(24.dp))
         SettingsSection("Account")
@@ -160,36 +172,6 @@ fun SettingsScreen(
         ) { Text("Save") }
         Pending("LAN only — never connect through the server")
 
-        Spacer(Modifier.height(24.dp))
-        SettingsSection("How the phones would reach each other")
-        val config = ice
-        if (config == null) {
-            Pending("Asking the server…")
-        } else {
-            Text(
-                text = if (config.hasRelay) {
-                    "A relay is available, for the times a direct connection cannot be made — " +
-                        "mostly one phone on mobile data. It is never used on the same WiFi."
-                } else {
-                    "No relay configured. Direct connections only: same WiFi always works, and " +
-                        "most connections across the internet do too, but the rest will fail."
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(8.dp))
-            for (url in config.stunUrls + config.turnUrls) {
-                Text(url, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-            }
-            if (config.hasRelay) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Relay credential expires ${config.servers.expiresAt.take(16).replace('T', ' ')} UTC",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
     }
 }
 
