@@ -115,11 +115,24 @@ fun ConnectScreen(
             TabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Show") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Scan") })
-                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Type") })
+
+                // A typed code links two accounts. With none, there is nothing it could say.
+                if (!viewModel.withoutAccount) {
+                    Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Type") })
+                }
             }
 
             when (tab) {
-                0 -> ShowCode(viewModel.qrPayload, code?.code, secondsLeft, error, viewModel::newCode, onInvite)
+                0 -> ShowCode(
+                    payload = viewModel.qrPayload,
+                    shortCode = code?.code,
+                    secondsLeft = secondsLeft,
+                    error = error,
+                    withoutAccount = viewModel.withoutAccount,
+                    onNewCode = viewModel::newCode,
+                    onInvite = onInvite
+                )
+
                 1 -> ScanCode(viewModel::onScanned)
                 else -> TypeCode(busy, viewModel::onCodeTyped)
             }
@@ -133,6 +146,7 @@ private fun ShowCode(
     shortCode: String?,
     secondsLeft: Long,
     error: String?,
+    withoutAccount: Boolean,
     onNewCode: () -> Unit,
     onInvite: () -> Unit
 ) {
@@ -191,6 +205,28 @@ private fun ShowCode(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary
             )
+        }
+
+        if (withoutAccount) {
+            // Nothing here expires and nothing can be typed, so the screen should stop implying
+            // both. What it can say is why, and what the other phone has to be doing.
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "There is no code to type: without an account there are no accounts to " +
+                    "link, and a key is far too long to read out. Scanning is the whole of it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "The other phone needs the app open on this WiFi — it is told who scanned " +
+                    "it over the network, and there is no server to hold that message for later.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            return@Column
         }
 
         Spacer(Modifier.height(8.dp))

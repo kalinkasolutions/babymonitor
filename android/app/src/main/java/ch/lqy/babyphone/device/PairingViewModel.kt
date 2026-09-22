@@ -66,6 +66,9 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     /** How long the displayed code is still good for, so it cannot lapse without saying so. */
     val secondsLeft: StateFlow<Long> = _secondsLeft.asStateFlow()
 
+    /** With no account there is no code to type, nobody to invite, and no code to renew. */
+    val withoutAccount: Boolean = local.enabled
+
     private val calls = CallCenter.of(application)
 
     init {
