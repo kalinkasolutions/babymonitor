@@ -102,6 +102,11 @@ cd android
 ./gradlew installDebug         # to every connected device
 ```
 
+**Or skip the server entirely.** On the sign-in screen, *Use it without an account*: the phones
+pair by scanning, find each other over mDNS, and nothing leaves the house. You lose what a server
+is for — inviting a babysitter by email, listening from outside the house, getting back in when a
+phone is lost — and keep the monitor.
+
 Then, on both phones:
 
 1. Open the app, set the server address, sign in.

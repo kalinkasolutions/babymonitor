@@ -22,8 +22,11 @@ class PairingPayloadTest {
     }
 
     @Test
-    fun `rejects a payload with no code to link with`() {
-        assertNull(PairingPayload.decode("""{"v":1,"d":"$DEVICE_ID","k":"$KEY","n":"$SECRET"}"""))
+    fun `a payload with no code is a pairing with no accounts behind it`() {
+        val decoded = PairingPayload.decode("""{"v":1,"d":"$DEVICE_ID","k":"$KEY","n":"$SECRET"}""")
+
+        assertEquals("", decoded?.code)
+        assertEquals(KEY, decoded?.publicKey)
     }
 
     @Test

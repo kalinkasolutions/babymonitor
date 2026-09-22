@@ -35,7 +35,13 @@ class LanSignalling(
 
     /** The key this phone has confirmed for that device, or null if it has not. */
     private val confirmedKeyFor: (String) -> String?,
-    private val onSignal: (SignalMessage) -> Unit
+    private val onSignal: (SignalMessage) -> Unit,
+
+    /**
+     * A message from a phone whose key is not confirmed. Only pairing arrives this way, and only
+     * because it carries its own proof: everything else is dropped where the signature fails.
+     */
+    private val onUnverified: (SignalMessage) -> Unit = {}
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -124,12 +130,18 @@ class LanSignalling(
 
                 // The whole authentication of this path. A phone whose key was never confirmed
                 // cannot be told apart from anybody else on the WiFi, so it is not listened to.
+                val message = json.decodeFromString<SignalMessage>(envelope.signal)
                 if (!envelope.isSignedBy(confirmedKeyFor(envelope.from))) {
-                    Log.w(Tag, "Dropped a local signal that was not signed by a confirmed key")
+                    if (message.kind == SignalKinds.Pair) {
+                        // The one thing a stranger may say, because it arrives with the proof
+                        // that it was read off this phone's own screen a moment ago.
+                        onUnverified(message.copy(fromDeviceId = envelope.from))
+                    } else {
+                        Log.w(Tag, "Dropped a local signal that was not signed by a confirmed key")
+                    }
+
                     return
                 }
-
-                val message = json.decodeFromString<SignalMessage>(envelope.signal)
 
                 // The sender is whoever signed it, never whoever the message says.
                 onSignal(message.copy(fromDeviceId = envelope.from))

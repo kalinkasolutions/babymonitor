@@ -97,6 +97,12 @@ Known reasons the direct LAN path fails, all worth naming in that diagnostic:
 
 A link decides visibility; trust is decided separately, on the phones:
 
+- [x] No account at all: two phones on one WiFi pair by scanning, find each other over mDNS and
+      never touch a server. Signing in buys what has to leave the house — a babysitter invited by
+      email, a phone reachable from outside, recovery when one is lost
+- [x] Pairing without a server is the scan itself: no code to mint, and the phone that scanned
+      says who it is across the WiFi, proving it with the secret that was only ever on the screen
+
 - [x] Accounts linked by scanning a QR code, typing a short code, or an emailed invitation
 - [x] An invitation to an address that already has an account links nothing until that person
       accepts it from the mail

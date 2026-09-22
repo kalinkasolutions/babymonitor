@@ -69,7 +69,8 @@ private fun BabyphoneApp(viewModel: AuthViewModel = viewModel()) {
                     error = error,
                     onServerUrlChange = { viewModel.serverUrl = it },
                     onLogin = viewModel::login,
-                    onGoToRegister = { viewModel.showRegister(true) }
+                    onGoToRegister = { viewModel.showRegister(true) },
+                    onWithoutAccount = viewModel::continueWithoutAccount
                 )
             }
 

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ch.lqy.babyphone.device.DeviceIdentity
+import ch.lqy.babyphone.device.LocalSession
 import ch.lqy.babyphone.device.readBattery
 import ch.lqy.babyphone.net.ApiClient
 import ch.lqy.babyphone.net.ApiResult
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val api = ApiClient(application)
+    private val local = LocalSession(application)
 
     private val _state = MutableStateFlow<AuthState>(AuthState.Checking)
     val state: StateFlow<AuthState> = _state.asStateFlow()
@@ -43,7 +45,22 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
      * lands on the login screen rather than an error: the address may simply need changing, and
      * that field is on the login screen.
      */
+    /**
+     * Starts using the app with no account at all. Everything the server did has a local answer:
+     * the identity is the key already in the keystore, pairing is the scan itself, and the phones
+     * find each other on the WiFi. What it gives up is everything that has to leave the house.
+     */
+    fun continueWithoutAccount() {
+        local.enabled = true
+        _state.value = AuthState.SignedIn(local.name)
+    }
+
     fun restoreSession() {
+        if (local.enabled) {
+            _state.value = AuthState.SignedIn(local.name)
+            return
+        }
+
         viewModelScope.launch {
             _state.value = AuthState.Checking
             when (val result = api.status()) {
@@ -80,6 +97,11 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** The session ended elsewhere in the app — the account was deleted, or signed out everywhere. */
+    fun leaveLocalMode() {
+        local.enabled = false
+        _state.value = AuthState.SignedOut()
+    }
+
     fun forgetSession() {
         _error.value = null
         _state.value = AuthState.SignedOut()

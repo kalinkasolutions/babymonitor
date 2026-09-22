@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
+import ch.lqy.babyphone.device.LocalSession
 import ch.lqy.babyphone.device.VerifiedKeys
 import ch.lqy.babyphone.net.ApiClient
 import ch.lqy.babyphone.net.ApiResult
@@ -28,7 +29,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -55,11 +59,18 @@ class CallCenter private constructor(private val context: Context) {
      */
     private val lan = LanSignalling(
         context = context,
-        thisDeviceId = { api.deviceId },
+        thisDeviceId = { if (local.enabled) local.deviceId else api.deviceId },
         confirmedKeyFor = { deviceId -> verifiedKeys.pinned(deviceId) },
-        onSignal = { signal -> scope.launch { onSignal(signal) } }
+        onSignal = { signal -> scope.launch { onSignal(signal) } },
+        onUnverified = { signal -> scope.launch { _pairings.emit(signal) } }
     )
+
+    private val _pairings = MutableSharedFlow<SignalMessage>(extraBufferCapacity = 4)
+
+    /** Somebody scanned this phone's code and said so across the WiFi. */
+    val pairings: SharedFlow<SignalMessage> = _pairings.asSharedFlow()
     private val verifiedKeys = VerifiedKeys(context)
+    private val local = LocalSession(context)
     private val alarmSettings = AlarmSettings(context)
     private val callPreferences = CallPreferences(context)
     private var watch = NoiseWatch(alarmSettings.current)
@@ -197,11 +208,20 @@ class CallCenter private constructor(private val context: Context) {
 
     init {
         load()
-        listen()
+        if (!local.enabled) {
+            listen()
+        }
+
         lan.start()
     }
 
     fun refresh() = load()
+
+    /** Hands a message straight to a phone on this network, for pairing before there is trust. */
+    suspend fun sendLocally(message: SignalMessage): Boolean = lan.send(message)
+
+    /** Whether that phone is on this network, whatever the server thinks. */
+    fun onThisNetwork(deviceId: String): Boolean = lan.reachable(deviceId)
 
     fun listenTo(deviceId: String, video: Boolean = false) {
         // Whatever went wrong last time is not news about this attempt.
@@ -284,6 +304,20 @@ class CallCenter private constructor(private val context: Context) {
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     private fun load() {
+        // With no account there is no list to fetch: the phones this one has scanned are the
+        // phones there are, and whether they can answer is a question for the WiFi.
+        if (local.enabled) {
+            _others.value = local.peers()
+            scope.launch {
+                while (true) {
+                    _online.value = _others.value.filter { lan.reachable(it.id) }.map { it.id }.toSet()
+                    delay(PresenceInterval)
+                }
+            }
+
+            return
+        }
+
         scope.launch {
             when (val result = api.devices()) {
                 is ApiResult.Ok -> {
@@ -841,6 +875,9 @@ class CallCenter private constructor(private val context: Context) {
         /** Asking and negotiating both take seconds; this much means nobody is there. */
         private const val AnswerLimit = 15_000L
         private const val PathInterval = 5_000L
+
+        /** How often a serverless phone looks around the network for the other one. */
+        private const val PresenceInterval = 3_000L
 
         @Volatile
         private var instance: CallCenter? = null

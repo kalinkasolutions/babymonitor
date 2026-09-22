@@ -7,7 +7,12 @@ import ch.lqy.babyphone.net.ApiClient
 import ch.lqy.babyphone.net.DeviceEvent
 import ch.lqy.babyphone.net.DeviceStream
 import ch.lqy.babyphone.net.ApiResult
+import ch.lqy.babyphone.media.CallCenter
+import ch.lqy.babyphone.net.PairRequest
 import ch.lqy.babyphone.net.PairingCodeDto
+import ch.lqy.babyphone.net.SignalKinds
+import ch.lqy.babyphone.net.SignalMessage
+import kotlinx.serialization.json.Json
 import ch.lqy.babyphone.net.PairingCompletedDto
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class PairingViewModel(application: Application) : AndroidViewModel(application) {
     private val api = ApiClient(application)
     private val verifiedKeys = VerifiedKeys(application)
+    private val local = LocalSession(application)
     private val stream = DeviceStream(api)
 
     private val _code = MutableStateFlow<PairingCodeDto?>(null)
@@ -35,6 +41,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     /** Set from the camera's analysis thread, so it has to be atomic rather than a plain flag. */
     private val claiming = AtomicBoolean(false)
@@ -58,10 +66,46 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     /** How long the displayed code is still good for, so it cannot lapse without saying so. */
     val secondsLeft: StateFlow<Long> = _secondsLeft.asStateFlow()
 
+    private val calls = CallCenter.of(application)
+
     init {
         newCode()
-        listenForCompletion()
-        countDown()
+        if (local.enabled) {
+            listenForLocalPairing()
+        } else {
+            listenForCompletion()
+            countDown()
+        }
+    }
+
+    /**
+     * The other half of a scan with no server behind it. The phone that scanned says who it is
+     * across the WiFi, and proves it by signing its own identity with the secret that was only
+     * ever on this screen. Without that proof this is just a stranger claiming to be a baby
+     * monitor, which is why it is the only unverified message the app accepts.
+     */
+    private fun listenForLocalPairing() {
+        viewModelScope.launch {
+            calls.pairings.collect { signal ->
+                val request = runCatching { json.decodeFromString<PairRequest>(signal.body) }
+                    .getOrNull() ?: return@collect
+
+                val proved = shownSecrets.any {
+                    PairingProof.verify(it, request.deviceId, request.publicKey, request.proof)
+                }
+
+                if (!proved) {
+                    _outcome.value = ScanOutcome.ProofFailed(request.name.ifBlank { "That phone" })
+                    return@collect
+                }
+
+                local.remember(request.deviceId, request.name.ifBlank { "The other phone" }, request.publicKey)
+                verifiedKeys.pin(request.deviceId, request.publicKey)
+                _outcome.value = ScanOutcome.ConfirmedByScanner(
+                    request.name.ifBlank { "The other phone" }
+                )
+            }
+        }
     }
 
     /**
@@ -152,6 +196,19 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
 
     /** Asks for a fresh code. They expire after a few minutes, so this is also the retry. */
     fun newCode() {
+        // With no account there is nothing to ask for: this phone already has everything a scan
+        // needs, and a code exists only to link two accounts that do not know each other.
+        if (local.enabled) {
+            rememberSecret()
+            _code.value = PairingCodeDto(
+                deviceId = local.deviceId,
+                publicKey = DeviceIdentity.publicKey(),
+                code = "",
+                expiresAt = ""
+            )
+            return
+        }
+
         if (!issuing.compareAndSet(false, true)) {
             return
         }
@@ -198,6 +255,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 deviceId = code.deviceId,
                 publicKey = code.publicKey,
                 code = code.code,
+                name = if (local.enabled) local.name else "",
                 secret = secret
             ).encode()
         }
@@ -206,6 +264,43 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         val payload = PairingPayload.decode(text)
         if (payload == null) {
             _outcome.value = ScanOutcome.NotAPairingCode
+            return
+        }
+
+        // With no accounts, a scan is the whole of pairing: the key was read off the screen, so
+        // it is confirmed, and there is no link to make because there are no accounts to link.
+        if (local.enabled) {
+            local.remember(
+                id = payload.deviceId,
+                name = payload.name.ifBlank { "The other phone" },
+                publicKey = payload.publicKey
+            )
+            verifiedKeys.pin(payload.deviceId, payload.publicKey)
+
+            // And tell it who did the scanning, so it can pin this phone in return — the same
+            // one-scan-settles-both the server does over its hub.
+            viewModelScope.launch {
+                calls.sendLocally(
+                    SignalMessage(
+                        toDeviceId = payload.deviceId,
+                        kind = SignalKinds.Pair,
+                        body = json.encodeToString(
+                            PairRequest(
+                                deviceId = local.deviceId,
+                                name = local.name,
+                                publicKey = DeviceIdentity.publicKey(),
+                                proof = PairingProof.sign(
+                                    secret = payload.secret,
+                                    deviceId = local.deviceId,
+                                    publicKey = DeviceIdentity.publicKey()
+                                )
+                            )
+                        )
+                    )
+                )
+            }
+
+            _outcome.value = ScanOutcome.Confirmed(payload.name.ifBlank { "The other phone" })
             return
         }
 

@@ -16,7 +16,15 @@ data class PairingPayload(
     @SerialName("v") val version: Int = CurrentVersion,
     @SerialName("d") val deviceId: String,
     @SerialName("k") val publicKey: String,
-    @SerialName("c") val code: String,
+
+    /**
+     * The code that links the two accounts. Empty when there are no accounts: with no server
+     * there is nothing to link, and the key beside it is the whole of what a scan is for.
+     */
+    @SerialName("c") val code: String = "",
+
+    /** What this phone calls itself, since no account has a name for it. */
+    @SerialName("m") val name: String = "",
 
     /**
      * The one-time secret that makes a single scan confirm both phones. Present only in a QR —
@@ -39,7 +47,6 @@ data class PairingPayload(
                     it.version == CurrentVersion &&
                         it.deviceId.isNotBlank() &&
                         it.publicKey.isNotBlank() &&
-                        it.code.isNotBlank() &&
                         it.secret.isNotBlank()
                 }
     }
