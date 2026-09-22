@@ -38,7 +38,7 @@ fun LoginScreen(
     var password by rememberSaveable { mutableStateOf("") }
     var serverUrl by rememberSaveable { mutableStateOf(initialServerUrl) }
 
-    val canSubmit = !busy && email.isNotBlank() && password.isNotBlank()
+    val canSubmit = !busy && email.isNotBlank() && password.isNotBlank() && serverUrl.isNotBlank()
 
     fun submit() {
         onServerUrlChange(serverUrl)
@@ -93,6 +93,14 @@ fun LoginScreen(
             } else {
                 Text("Sign in")
             }
+        }
+
+        if (serverUrl.isBlank()) {
+            Text(
+                text = "Where is your server? A name or an address; https is assumed.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         Spacer(Modifier.height(8.dp))

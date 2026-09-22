@@ -144,29 +144,45 @@ class ApiClient(context: Context) {
     /** Forgets the session locally. Used when the server says the cookie is no longer good. */
     fun clearSession() = cookieJar.clear()
 
-    private suspend fun <T> get(path: String, decode: (String) -> T): ApiResult<T> =
-        execute(Request.Builder().url("$baseUrl/$path").get().build(), decode)
+    /**
+     * The address, or nothing. A blank one is a real state — a fresh install, or somebody who
+     * cleared the field — and building a request from it throws before any error handling can
+     * catch it, which is a crash where a sentence would do.
+     */
+    private fun urlFor(path: String): String? =
+        baseUrl.takeIf { it.isNotBlank() }?.let { "$it/$path" }
 
-    private suspend fun <T> put(path: String, body: String, decode: (String) -> T): ApiResult<T> =
-        execute(
-            Request.Builder().url("$baseUrl/$path").put(body.toRequestBody(JSON_MEDIA_TYPE)).build(),
+    private fun <T> noServer(): ApiResult<T> =
+        ApiResult.Failure("No server address. Set one, or use the app without an account.")
+
+    private suspend fun <T> get(path: String, decode: (String) -> T): ApiResult<T> {
+        val url = urlFor(path) ?: return noServer()
+        return execute(Request.Builder().url(url).get().build(), decode)
+    }
+
+    private suspend fun <T> put(path: String, body: String, decode: (String) -> T): ApiResult<T> {
+        val url = urlFor(path) ?: return noServer()
+        return execute(
+            Request.Builder().url(url).put(body.toRequestBody(JSON_MEDIA_TYPE)).build(),
             decode
         )
+    }
 
-    private suspend fun <T> delete(path: String, body: String, decode: (String) -> T): ApiResult<T> =
-        execute(
-            Request.Builder().url("$baseUrl/$path").delete(body.toRequestBody(JSON_MEDIA_TYPE)).build(),
+    private suspend fun <T> delete(path: String, body: String, decode: (String) -> T): ApiResult<T> {
+        val url = urlFor(path) ?: return noServer()
+        return execute(
+            Request.Builder().url(url).delete(body.toRequestBody(JSON_MEDIA_TYPE)).build(),
             decode
         )
+    }
 
-    private suspend fun <T> post(path: String, body: String, decode: (String) -> T): ApiResult<T> =
-        execute(
-            Request.Builder()
-                .url("$baseUrl/$path")
-                .post(body.toRequestBody(JSON_MEDIA_TYPE))
-                .build(),
+    private suspend fun <T> post(path: String, body: String, decode: (String) -> T): ApiResult<T> {
+        val url = urlFor(path) ?: return noServer()
+        return execute(
+            Request.Builder().url(url).post(body.toRequestBody(JSON_MEDIA_TYPE)).build(),
             decode
         )
+    }
 
     private suspend fun <T> execute(request: Request, decode: (String) -> T): ApiResult<T> =
         withContext(Dispatchers.IO) {

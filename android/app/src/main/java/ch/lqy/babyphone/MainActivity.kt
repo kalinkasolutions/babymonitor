@@ -2,6 +2,7 @@ package ch.lqy.babyphone
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -56,6 +57,9 @@ private fun BabyphoneApp(viewModel: AuthViewModel = viewModel()) {
 
         is AuthState.SignedOut ->
             if (current.showRegister) {
+                // Otherwise back leaves the app from a screen you opened by choice, one step in.
+                BackHandler { viewModel.showRegister(false) }
+
                 RegisterScreen(
                     busy = busy,
                     error = error,
