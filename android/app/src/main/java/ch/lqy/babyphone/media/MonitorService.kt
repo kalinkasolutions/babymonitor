@@ -12,8 +12,11 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.os.PowerManager
+import java.util.Timer
+import java.util.TimerTask
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -43,6 +46,12 @@ class MonitorService : Service() {
             return START_NOT_STICKY
         }
 
+        if (intent?.action == ActionAcknowledge) {
+            // Somebody is awake and has seen it. That is the only thing the alarm was waiting for.
+            silenceAlarm(this)
+            return START_STICKY
+        }
+
         isRunning = true
 
         createChannel()
@@ -60,6 +69,7 @@ class MonitorService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        stopAlarmSound()
 
         // The light is this phone's screen, and it must never outlive the reason it was on.
         LightActivity.dismiss(this)
@@ -121,6 +131,16 @@ class MonitorService : Service() {
         private const val LostNotificationId = 4
         private const val LightRequestCode = 2
         private const val ActionStop = "ch.lqy.babyphone.STOP_MONITORING"
+        private const val ActionAcknowledge = "ch.lqy.babyphone.ACKNOWLEDGE_ALARM"
+
+        /** However asleep somebody is, an alarm ringing this long has not been heard. */
+        private const val RingLimit = 10 * 60 * 1000L
+
+        @Volatile
+        private var player: MediaPlayer? = null
+
+        @Volatile
+        private var silence: Timer? = null
 
         /**
          * Must be called while the app is visible, and says so by failing rather than throwing
@@ -167,7 +187,67 @@ class MonitorService : Service() {
             )
         }
 
+        /** The room answered again, so the alarm about it going away has nothing left to say. */
         fun clearLostAlarm(context: Context) {
+            silenceAlarm(context)
+        }
+
+        /**
+         * Keeps sounding until somebody says they have seen it.
+         *
+         * A notification plays its tone once. That is right for a message and wrong for the one
+         * event this app exists to report: an alarm nobody hears is an alarm that did not happen,
+         * and the phone in the room does not raise a second one when it has simply gone.
+         */
+        private fun startAlarmSound(context: Context) {
+            if (player != null) {
+                return
+            }
+
+            val tone = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                ?: return
+
+            player = runCatching {
+                MediaPlayer().apply {
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                    setDataSource(context, tone)
+                    isLooping = true
+                    prepare()
+                    start()
+                }
+            }.getOrNull()
+
+            // A cap, because an alarm in an empty house should not ring until the battery is flat.
+            // Long enough that sleeping through it is the only way to reach it.
+            silence?.cancel()
+            silence = Timer().also {
+                it.schedule(
+                    object : TimerTask() {
+                        override fun run() = stopAlarmSound()
+                    },
+                    RingLimit
+                )
+            }
+        }
+
+        private fun stopAlarmSound() {
+            silence?.cancel()
+            silence = null
+            runCatching { player?.stop() }
+            player?.release()
+            player = null
+        }
+
+        /** Stops the noise and takes the notification down with it. */
+        fun silenceAlarm(context: Context) {
+            stopAlarmSound()
+            NotificationManagerCompat.from(context).cancel(AlarmNotificationId)
             NotificationManagerCompat.from(context).cancel(LostNotificationId)
         }
 
@@ -197,6 +277,13 @@ class MonitorService : Service() {
                 PendingIntent.FLAG_IMMUTABLE
             )
 
+            val acknowledge = PendingIntent.getService(
+                context,
+                4,
+                Intent(context, MonitorService::class.java).setAction(ActionAcknowledge),
+                PendingIntent.FLAG_IMMUTABLE
+            )
+
             val notification = NotificationCompat.Builder(context, AlarmChannelId)
                 .setContentTitle(title)
                 .setContentText(text)
@@ -204,10 +291,15 @@ class MonitorService : Service() {
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setContentIntent(open)
-                .setAutoCancel(true)
+                .addAction(0, "I'm awake", acknowledge)
+                // Stays until acknowledged, and silent because the sound is played and looped
+                // here rather than handed to the notification, which would play it once.
+                .setOngoing(true)
+                .setSilent(true)
                 .build()
 
             runCatching { notifications.notify(id, notification) }
+            startAlarmSound(context)
         }
 
         /**

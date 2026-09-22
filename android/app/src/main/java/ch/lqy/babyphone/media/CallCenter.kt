@@ -15,6 +15,7 @@ import ch.lqy.babyphone.net.DeviceEvent
 import ch.lqy.babyphone.net.DeviceStream
 import ch.lqy.babyphone.net.IceCandidateDto
 import ch.lqy.babyphone.net.IceServersDto
+import ch.lqy.babyphone.net.LanSignalling
 import ch.lqy.babyphone.net.LightMode
 import ch.lqy.babyphone.net.LightRequest
 import ch.lqy.babyphone.net.QualityRequest
@@ -46,6 +47,18 @@ import org.webrtc.VideoTrack
 class CallCenter private constructor(private val context: Context) {
     private val api = ApiClient(context)
     private val stream = DeviceStream(api)
+
+    /**
+     * The same signalling, straight across the WiFi. Tried first when the other phone is on this
+     * network: it is quicker, and it is what keeps two phones in one house working when the
+     * internet does not.
+     */
+    private val lan = LanSignalling(
+        context = context,
+        thisDeviceId = { api.deviceId },
+        confirmedKeyFor = { deviceId -> verifiedKeys.pinned(deviceId) },
+        onSignal = { signal -> scope.launch { onSignal(signal) } }
+    )
     private val verifiedKeys = VerifiedKeys(context)
     private val alarmSettings = AlarmSettings(context)
     private val callPreferences = CallPreferences(context)
@@ -169,6 +182,13 @@ class CallCenter private constructor(private val context: Context) {
      */
     @Volatile
     var watching: Boolean = false
+        set(value) {
+            field = value
+            // Looking at the room is as good as pressing the button: the alarm has done its job.
+            if (value) {
+                MonitorService.silenceAlarm(context)
+            }
+        }
 
     private val status = StatusMonitor(context) { current ->
         link?.send(json.encodeToString(RoomReport(status = current)))
@@ -178,6 +198,7 @@ class CallCenter private constructor(private val context: Context) {
     init {
         load()
         listen()
+        lan.start()
     }
 
     fun refresh() = load()
@@ -512,12 +533,24 @@ class CallCenter private constructor(private val context: Context) {
                 }
             }
 
-            is CallEffect.Send -> report(
-                effect,
-                stream.sendSignal(
-                    SignalMessage(toDeviceId = effect.toDeviceId, kind = effect.kind, body = effect.body)
+            is CallEffect.Send -> {
+                val message = SignalMessage(
+                    toDeviceId = effect.toDeviceId,
+                    kind = effect.kind,
+                    body = effect.body
                 )
-            )
+
+                // The WiFi first, the server second. Nothing is lost by trying: a phone that is
+                // not on this network, or whose key was never confirmed, simply says no and the
+                // hub carries it as before.
+                val result = if (lan.send(message)) {
+                    SignalResult.Delivered
+                } else {
+                    stream.sendSignal(message)
+                }
+
+                report(effect, result)
+            }
 
             CallEffect.Close -> {
                 pathWatch?.cancel()

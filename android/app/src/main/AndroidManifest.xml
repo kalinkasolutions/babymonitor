@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Finding the other phone on the same WiFi and handing it a signalling message directly,
+         so two phones in one house keep working when the internet does not. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- The recording half of a monitor. Asked for when this phone is told to start sending,
          not at launch: a phone that only ever listens never needs it. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />

@@ -300,6 +300,11 @@ Nothing happens. Discovery went over mDNS and the media path is direct on the LA
 neither depends on the internet. This case is the reason LAN signalling exists rather
 than routing everything through the backend for simplicity.
 
+A household running the backend on its own LAN gets the same outcome from split-horizon DNS —
+the name resolves to a machine inside the house, so nothing has to leave it. mDNS is what covers
+the arrangement where the backend is somewhere else, and the network it has to work on is one
+nobody here administers.
+
 ### 8. The recording phone dies
 
 Its charger is knocked out and the battery drains, or Android kills the process, or

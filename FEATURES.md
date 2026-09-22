@@ -27,10 +27,16 @@ Three media paths, picked automatically by ICE in this order:
 
 Two signalling paths, so the normal case does not depend on the internet:
 
-- [ ] Discovery and SDP exchange over the LAN (Android NSD / mDNS), no backend involved
+- [x] Discovery and SDP exchange over the LAN (Android NSD / mDNS), no backend involved: each
+      phone announces itself as `_babyphone._tcp` and hands the other its offer on a local
+      socket, tried before the hub and falling back to it
+- [x] Every local message signed with the sender's identity key and checked against the key this
+      phone confirmed in person — on a LAN there is no cookie to vouch for anyone, so a phone at
+      1 of 2 goes through the server instead
 - [x] Signalling through the backend when the phones are on different networks — offer,
       answer and candidates, addressed to one phone rather than to an account
-- [ ] Keep working when the WAN is down but the WiFi is up
+- [x] Keep working when the WAN is down but the WiFi is up — signalling over the LAN, media
+      direct, neither touching the internet
 
 First calls — audio working on two real phones, video built on the same path:
 
@@ -156,7 +162,10 @@ A link decides visibility; trust is decided separately, on the phones:
 - [ ] Watch the video on the lock screen without unlocking (setShowWhenLocked)
 - [x] The recording phone's light shows over its own lock screen and turns its screen on
       (setShowWhenLocked, setTurnScreenOn)
-- [ ] Alarm keeps sounding until acknowledged
+- [x] Alarm keeps sounding until acknowledged: the tone is played and looped by the app rather
+      than handed to a notification that plays it once, and stops on "I'm awake", on opening the
+      call, or when the room answers again. Ten minutes is the cap, because an alarm in an empty
+      house should not ring until the battery is flat
 - [x] Ongoing notification with the current state and a stop action
 
 ### Video
