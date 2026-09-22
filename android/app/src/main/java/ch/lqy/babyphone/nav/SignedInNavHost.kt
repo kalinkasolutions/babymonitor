@@ -22,6 +22,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.ui.platform.LocalContext
+import ch.lqy.babyphone.device.LocalSession
 import ch.lqy.babyphone.ui.AccountAvatar
 import ch.lqy.babyphone.ui.MonitorScreen
 import ch.lqy.babyphone.ui.account.AccountScreen
@@ -54,7 +56,13 @@ fun SignedInNavHost(
                 TopAppBar(
                     title = { Text(currentTab.label) },
                     actions = {
-                        AccountAvatar(username) { navController.navigate(Destination.Account) }
+                        // With no account behind it the account screens have nothing to show —
+                        // they ask the server who you are — so the avatar offers the one thing
+                        // that is missing instead, and goes to the sign-in screen.
+                        val withoutAccount = LocalSession(LocalContext.current).enabled
+                        AccountAvatar(username) {
+                            if (withoutAccount) onSignedOut() else navController.navigate(Destination.Account)
+                        }
                     }
                 )
             }
@@ -93,7 +101,7 @@ fun SignedInNavHost(
             }
 
             composable<Destination.Settings> {
-                SettingsScreen(serverUrl, onServerUrlChange)
+                SettingsScreen(serverUrl, onServerUrlChange, onSignedOut)
             }
 
             composable<Destination.Account> {

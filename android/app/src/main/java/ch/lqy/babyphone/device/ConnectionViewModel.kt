@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 /** What this phone knows about how it would reach the other one. */
 class ConnectionViewModel(application: Application) : AndroidViewModel(application) {
     private val api = ApiClient(application)
+    private val local = LocalSession(application)
 
     private val _ice = MutableStateFlow<IceConfig?>(null)
     val ice: StateFlow<IceConfig?> = _ice.asStateFlow()
@@ -31,6 +32,12 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun refresh() {
+        // Nothing to fetch with no account: two phones on one WiFi reach each other on their own
+        // addresses, which is the only path there is without a server to ask about the others.
+        if (local.enabled) {
+            return
+        }
+
         viewModelScope.launch {
             when (val result = api.iceServers()) {
                 is ApiResult.Ok -> _ice.value = IceConfig(result.value)

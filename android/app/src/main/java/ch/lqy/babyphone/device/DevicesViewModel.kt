@@ -8,15 +8,20 @@ import ch.lqy.babyphone.net.ApiResult
 import ch.lqy.babyphone.net.DeviceDto
 import ch.lqy.babyphone.net.DeviceEvent
 import ch.lqy.babyphone.net.DeviceStream
+import ch.lqy.babyphone.media.CallCenter
 import ch.lqy.babyphone.net.HeartbeatRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+private const val LocalOwner = "local"
+
 class DevicesViewModel(application: Application) : AndroidViewModel(application) {
     private val api = ApiClient(application)
     private val verifiedKeys = VerifiedKeys(application)
+    private val local = LocalSession(application)
+    private val calls = CallCenter.of(application)
     private val stream = DeviceStream(api)
 
     private val _devices = MutableStateFlow<List<DeviceListItem>>(emptyList())
@@ -33,7 +38,9 @@ class DevicesViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         refresh()
-        listen()
+        if (!local.enabled) {
+            listen()
+        }
     }
 
     /**
@@ -94,7 +101,10 @@ class DevicesViewModel(application: Application) : AndroidViewModel(application)
     /** Registration happens on sign-in, so this only has to report a fresh battery reading. */
     fun refresh() {
         whileBusy {
-            api.deviceId?.let { sendHeartbeat(it) }
+            if (!local.enabled) {
+                api.deviceId?.let { sendHeartbeat(it) }
+            }
+
             load()
         }
     }
@@ -137,6 +147,13 @@ class DevicesViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun revoke(deviceId: String) {
+        if (local.enabled) {
+            local.forget(deviceId)
+            verifiedKeys.forget(deviceId)
+            whileBusy { load() }
+            return
+        }
+
         whileBusy {
             when (val result = api.revokeDevice(deviceId)) {
                 is ApiResult.Ok -> {
@@ -162,6 +179,14 @@ class DevicesViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun load() {
+        // With no account there is no server to ask. The phones this one has scanned are the
+        // phones there are, and the WiFi says which of them are answering.
+        if (local.enabled) {
+            val mine = local.peers().map { it.copy(isOnline = calls.onThisNetwork(it.id)) }
+            _devices.value = ordered(mine.map { toItem(it, LocalOwner) } + thisPhone())
+            return
+        }
+
         when (val result = api.devices()) {
             is ApiResult.Ok -> {
                 val mine = myOwnerId(result.value)
@@ -199,6 +224,21 @@ class DevicesViewModel(application: Application) : AndroidViewModel(application)
                 .thenBy { it.device.ownerName }
                 .thenByDescending { it.device.lastSeenAt.orEmpty() }
         )
+
+    /** This phone, which no server described because there is none. */
+    private fun thisPhone(): DeviceListItem {
+        val device = DeviceDto(
+            id = local.deviceId,
+            name = local.name,
+            isMine = true,
+            isOnline = true,
+            ownerId = LocalOwner,
+            ownerName = "This household",
+            publicKey = thisPhoneKey
+        )
+
+        return DeviceListItem(device, KeyTrust.Confirmed, isThisPhone = true, isMine = true)
+    }
 
     private fun whileBusy(block: suspend () -> Unit) {
         viewModelScope.launch {

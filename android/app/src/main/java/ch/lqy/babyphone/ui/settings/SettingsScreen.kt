@@ -37,7 +37,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.lqy.babyphone.BuildConfig
+import androidx.compose.runtime.remember
 import ch.lqy.babyphone.device.ConnectionViewModel
+import ch.lqy.babyphone.device.LocalSession
 import ch.lqy.babyphone.media.MonitorViewModel
 import ch.lqy.babyphone.media.NoiseAlarmSettings
 
@@ -49,13 +51,16 @@ import ch.lqy.babyphone.media.NoiseAlarmSettings
 fun SettingsScreen(
     serverUrl: String,
     onServerUrlChange: (String) -> Unit,
+    onSignedOut: () -> Unit = {},
     viewModel: ConnectionViewModel = viewModel(),
     monitor: MonitorViewModel = viewModel()
 ) {
     var url by rememberSaveable { mutableStateOf(serverUrl) }
     val ice by viewModel.ice.collectAsState()
+    val context = LocalContext.current
     val alarm by monitor.alarm.collectAsState()
     val relayOnly by monitor.relayOnly.collectAsState()
+    val local = remember { LocalSession(context) }
 
     Column(
         modifier = Modifier
@@ -104,6 +109,28 @@ fun SettingsScreen(
         SettingsSection("Video")
         Pending("Start with video off")
         Pending("Light for a dark room: night light, screen or torch")
+
+        Spacer(Modifier.height(24.dp))
+        SettingsSection("Account")
+        if (local.enabled) {
+            Text(
+                text = "Running without an account. The phones found each other on this WiFi and " +
+                    "nothing leaves the house — which also means no listening from outside it, " +
+                    "and nobody can be invited.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(onClick = { local.enabled = false; onSignedOut() }) {
+                Text("Sign in with an account instead")
+            }
+        } else {
+            Text(
+                text = "Signed in. Your phones can reach each other from anywhere, and people can " +
+                    "be invited by email.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
 
         Spacer(Modifier.height(24.dp))
         SettingsSection("About")
@@ -316,8 +343,9 @@ private fun AlarmCurve(settings: NoiseAlarmSettings) {
 }
 
 /**
- * Which build this is, and where to complain about it. The version and the commit go into the
- * subject of the mail: a report that says which build it came from is worth several that do not.
+ * Which build this is, and the two ways to say something about it. The version and the commit go
+ * into the subject of the mail: a report that says which build it came from is worth several
+ * that do not.
  */
 @Composable
 private fun About() {
@@ -330,7 +358,9 @@ private fun About() {
         fontFamily = FontFamily.Monospace,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
+
     Spacer(Modifier.height(8.dp))
+    Text("Support", style = MaterialTheme.typography.bodyMedium)
     TextButton(
         onClick = {
             runCatching {
@@ -341,4 +371,16 @@ private fun About() {
             }
         }
     ) { Text(BuildConfig.SUPPORT_EMAIL) }
+
+    Text("Source", style = MaterialTheme.typography.bodyMedium)
+    TextButton(
+        onClick = {
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Repository)))
+            }
+        }
+    ) { Text(Repository.removePrefix("https://")) }
 }
+
+/** Where the thing on this phone came from, and where it can be read. */
+private const val Repository = "https://github.com/kalinkasolutions/babymonitor"

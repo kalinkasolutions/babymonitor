@@ -103,6 +103,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun forgetSession() {
+        // Whichever way this phone was being used, it is being put down now.
+        local.enabled = false
+
         _error.value = null
         _state.value = AuthState.SignedOut()
     }
