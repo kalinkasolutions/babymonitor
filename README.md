@@ -80,6 +80,10 @@ docker compose up -d
 
 Keep `./data` — it holds the database and the key ring that keeps phones signed in.
 
+The image comes from Docker Hub, built by
+[the release workflow](.github/workflows/docker-publish.yml) when a release is published. To build
+it yourself: `docker build -t kalinkasolutions/babyphone:latest .`
+
 ### 6. Check
 
 ```bash
