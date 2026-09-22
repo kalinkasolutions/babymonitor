@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ch.lqy.babyphone.device.DeviceIdentity
 import ch.lqy.babyphone.device.LocalSession
+import ch.lqy.babyphone.media.CallCenter
 import ch.lqy.babyphone.device.readBattery
 import ch.lqy.babyphone.net.ApiClient
 import ch.lqy.babyphone.net.ApiResult
@@ -41,20 +42,21 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Asks the server whether the stored cookie is still good. A server that cannot be reached
-     * lands on the login screen rather than an error: the address may simply need changing, and
-     * that field is on the login screen.
-     */
-    /**
      * Starts using the app with no account at all. Everything the server did has a local answer:
      * the identity is the key already in the keystore, pairing is the scan itself, and the phones
      * find each other on the WiFi. What it gives up is everything that has to leave the house.
      */
     fun continueWithoutAccount() {
+        CallCenter.reset(getApplication())
         local.enabled = true
         _state.value = AuthState.SignedIn(local.name)
     }
 
+    /**
+     * Asks the server whether the stored cookie is still good. A server that cannot be reached
+     * lands on the login screen rather than an error: the address may simply need changing, and
+     * that field is on the login screen.
+     */
     fun restoreSession() {
         if (local.enabled) {
             _state.value = AuthState.SignedIn(local.name)
@@ -98,12 +100,14 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     /** The session ended elsewhere in the app — the account was deleted, or signed out everywhere. */
     fun leaveLocalMode() {
+        CallCenter.reset(getApplication())
         local.enabled = false
         _state.value = AuthState.SignedOut()
     }
 
     fun forgetSession() {
         // Whichever way this phone was being used, it is being put down now.
+        CallCenter.reset(getApplication())
         local.enabled = false
 
         _error.value = null
@@ -156,6 +160,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
      * every session restore costs one request and keeps the name and last-seen time current.
      */
     private suspend fun signedIn(username: String) {
+        // A session that starts is as much of a change as one that ends: the phones from the last
+        // one are not this one's.
+        CallCenter.reset(getApplication())
         registerThisDevice()
         _state.value = AuthState.SignedIn(username)
     }

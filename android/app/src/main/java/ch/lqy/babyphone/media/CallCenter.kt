@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -872,6 +873,30 @@ class CallCenter private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Ends everything this session was doing. Held against the application so a call survives the
+     * screen it was started from — which also means nothing about it goes away on its own when
+     * the session it belonged to does.
+     */
+    private fun close() {
+        statusTicker?.cancel()
+        watchdog?.cancel()
+        redial?.cancel()
+        dropped?.cancel()
+        answering?.cancel()
+        pathWatch?.cancel()
+        localWatch?.cancel()
+
+        status.stop()
+        link?.close()
+        link = null
+        lan.stop()
+        stream.disconnect()
+        MonitorService.silenceAlarm(context)
+        MonitorService.disarm(context)
+        scope.cancel()
+    }
+
     companion object {
         /**
          * Said again on a slow beat, whether or not anything changed. A battery that has not moved
@@ -908,5 +933,17 @@ class CallCenter private constructor(private val context: Context) {
             instance ?: synchronized(this) {
                 instance ?: CallCenter(context.applicationContext).also { instance = it }
             }
+
+        /**
+         * Forgets the session: signing out, signing in, or starting to use the app without an
+         * account. Everything here belongs to one of those — which phones exist, which server
+         * they came from, whether there is a server at all — and none of it survives the change.
+         */
+        fun reset(context: Context) {
+            synchronized(this) {
+                instance?.close()
+                instance = null
+            }
+        }
     }
 }
