@@ -6,9 +6,9 @@ between them, encrypted end to end; the server only introduces them to each othe
 
 ## Contents
 
-- [Install the server](#install-the-server) — six steps
+- [Install the server](#install-the-server)
 - [Install the app](#install-the-app)
-- [How the phones connect](#how-the-phones-connect) — what STUN, TURN and the certificates are for
+- [How the phones connect](#how-the-phones-connect)
 - [When something is wrong](#when-something-is-wrong)
 - [Development](#development)
 - [Reference](#reference)
@@ -43,46 +43,16 @@ name is enough if nginx and Docker are the same machine.
 
 ### 3. nginx
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name baby.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
-
-    location / {
-        proxy_pass http://DOCKER_HOST:7881;
-
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade    $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_read_timeout 3600s;
-        proxy_buffering off;
-    }
-}
-```
-
-And this **beside `http { }`, not inside it** — it is what lets nginx hold the certificate for the
-relay:
+Copy [deploy/nginx/babyphone.conf](deploy/nginx/babyphone.conf), replace the three placeholders in
+it, and include it from the **top level** of `nginx.conf` — beside `events` and `http`, not inside
+them, because the `stream` block cannot go anywhere else:
 
 ```nginx
-stream {
-    server {
-        listen 5349 ssl;
-        ssl_certificate     /etc/letsencrypt/live/example.com/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
-        proxy_pass DOCKER_HOST:3478;
-    }
-}
+include /etc/nginx/babyphone.conf;
 ```
 
-The `Upgrade` lines are not optional: without them no call ever connects.
+If your `nginx.conf` already has an `http` block, move the `server` sections from that file into
+it and leave the `stream` section where it is.
 
 ### 4. Settings
 
