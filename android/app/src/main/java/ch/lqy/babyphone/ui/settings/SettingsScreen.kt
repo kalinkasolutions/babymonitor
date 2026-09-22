@@ -1,5 +1,7 @@
 package ch.lqy.babyphone.ui.settings
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,9 +32,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import ch.lqy.babyphone.BuildConfig
 import ch.lqy.babyphone.device.ConnectionViewModel
 import ch.lqy.babyphone.media.MonitorViewModel
 import ch.lqy.babyphone.media.NoiseAlarmSettings
@@ -99,6 +104,10 @@ fun SettingsScreen(
         SettingsSection("Video")
         Pending("Start with video off")
         Pending("Light for a dark room: night light, screen or torch")
+
+        Spacer(Modifier.height(24.dp))
+        SettingsSection("About")
+        About()
 
         Spacer(Modifier.height(24.dp))
         SettingsSection("Connection")
@@ -304,4 +313,32 @@ private fun AlarmCurve(settings: NoiseAlarmSettings) {
             )
         }
     }
+}
+
+/**
+ * Which build this is, and where to complain about it. The version and the commit go into the
+ * subject of the mail: a report that says which build it came from is worth several that do not.
+ */
+@Composable
+private fun About() {
+    val context = LocalContext.current
+    val build = "${BuildConfig.VERSION_NAME} (${BuildConfig.COMMIT})"
+
+    Text(
+        text = "Babyphone $build",
+        style = MaterialTheme.typography.bodyMedium,
+        fontFamily = FontFamily.Monospace,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(8.dp))
+    TextButton(
+        onClick = {
+            runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${BuildConfig.SUPPORT_EMAIL}"))
+                        .putExtra(Intent.EXTRA_SUBJECT, "Babyphone $build")
+                )
+            }
+        }
+    ) { Text(BuildConfig.SUPPORT_EMAIL) }
 }

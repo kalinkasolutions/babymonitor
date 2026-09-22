@@ -5,6 +5,20 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+/**
+ * The commit this was built from, for the About section. Falls back rather than failing: the
+ * source may be a tarball or a shallow checkout on somebody else's build server.
+ */
+fun gitCommit(): String = runCatching {
+    ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+        .directory(rootDir)
+        .redirectErrorStream(true)
+        .start()
+        .inputStream.bufferedReader().readText().trim()
+        .takeIf { it.isNotEmpty() && !it.contains(" ") }
+        ?: "unknown"
+}.getOrDefault("unknown")
+
 android {
     namespace = "ch.lqy.babyphone"
     compileSdk = 36
@@ -13,8 +27,13 @@ android {
         applicationId = "ch.lqy.babyphone"
         minSdk = 29
         targetSdk = 36
+        // Literals on purpose. F-Droid reads them from here to notice a new version, so this is
+        // where a release number lives and the git tag follows it, not the other way round.
         versionCode = 1
         versionName = "0.1"
+
+        buildConfigField("String", "COMMIT", "\"${gitCommit()}\"")
+        buildConfigField("String", "SUPPORT_EMAIL", "\"kalinkasolutions@kalinka.ch\"")
     }
 
     buildTypes {
@@ -36,6 +55,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
