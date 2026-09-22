@@ -120,12 +120,12 @@ A link decides visibility; trust is decided separately, on the phones:
 - [ ] Switch this phone between recording and observing at any time
 - [ ] Switch the *other* phone's mode remotely
 - [ ] Swap both in one action, without re-pairing or signing out
-- [ ] Camera and microphone permission requested on both phones at setup, since either
+- [x] Camera and microphone permission requested on both phones at setup, since either
       may end up recording
 
 ### Recording mode
-- [ ] Foreground service with camera and microphone service types
-- [ ] Keeps capturing with the screen off and the device locked (partial wake lock)
+- [x] Foreground service with camera and microphone service types
+- [x] Keeps capturing with the screen off and the device locked, once armed while visible
 - [ ] Lock-screen activity that controls the panel: black at brightness 0 while idle,
       white while glancing, dim red while watching — never sleeps, never wakes
 - [ ] True screen off via device admin lockNow(), for LCD phones where black still glows
@@ -135,7 +135,7 @@ A link decides visibility; trust is decided separately, on the phones:
 - [ ] Guided setup for the battery-optimisation exemption (this is the usual failure)
 
 ### Observing mode
-- [ ] Live audio, playing with the screen off
+- [x] Live audio, playing with the screen off
 - [x] The room can be watched without listening — sound off is local to the watching phone
 - [x] Noise level meter: measured on the phone in the room, since WebRTC hands over what it
       records and never what it plays, and sent on the data channel several times a second
@@ -150,7 +150,8 @@ A link decides visibility; trust is decided separately, on the phones:
 - [x] Alarm when the room stops answering: nothing on the data channel for fifteen seconds,
       when noise arrives five times a second — the failure that looks exactly like a quiet room
 - [ ] Alarm takes the lock screen and turns the screen on, rather than only sounding
-- [ ] Alarm that bypasses silent mode and Do Not Disturb (alarm channel, USAGE_ALARM)
+- [x] Alarm on the alarm channel with USAGE_ALARM, so a phone silenced for the night still
+      hears it. Overriding Do Not Disturb as well needs a grant the user gives once
 - [ ] Full-screen intent alert on the lock screen
 - [ ] Watch the video on the lock screen without unlocking (setShowWhenLocked)
 - [x] The recording phone's light shows over its own lock screen and turns its screen on
@@ -160,7 +161,8 @@ A link decides visibility; trust is decided separately, on the phones:
 
 ### Video
 - [x] Audio-only by default; video asked for per call by the observing phone
-- [ ] Turn video on and off mid-call, which needs renegotiating an existing connection
+- [x] Turn video on and off mid-call — by starting and stopping the camera behind a track
+      that is always negotiated, so it needs no renegotiation and never interrupts the audio
 - [x] Remotely start video on a locked recording phone, without touching it, once it has
       been armed
 - [x] Resolution and frame rate asked for by the observing phone: 320x240/10, 640x480/15 or
@@ -182,7 +184,7 @@ Light, because phones have no infrared and a dark room films as black:
 - [ ] Torch driven by FLASH_MODE_TORCH inside the capture session while streaming, and
       by setTorchMode when idle
 - [ ] Torch limited to short bursts, since the LED overheats and the phone cuts it
-- [ ] Light turns off again with the video, leaving the room dark
+- [x] Light turns off again with the call, however the call ended
 - [ ] Setup advises a night light as the option that actually looks good
 
 ### Alerts
@@ -235,8 +237,10 @@ Still to build:
       to provision on the relay
 - [x] coturn itself, in its own project, with every internal range refused as a peer
 - [ ] FCM push to wake an observing phone whose connection dropped
-- [ ] Heartbeat / presence tracking per device
-- [ ] No media stored, no media decrypted
+- [x] Presence per device: the hub announces a phone arriving or leaving, so the list says
+      which ones can actually answer
+- [x] No media stored, no media decrypted — the backend carries signalling only, and the
+      relay forwards ciphertext it holds no key for
 
 ---
 
