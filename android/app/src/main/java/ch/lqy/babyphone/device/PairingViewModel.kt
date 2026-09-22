@@ -109,17 +109,24 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             )
         )
 
+        val name = payload.name.ifBlank { "The other phone" }
         repeat(PairingAttempts) {
             if (calls.sendLocally(message)) {
+                local.remember(payload.deviceId, name, payload.publicKey)
+                calls.refresh()
+                _outcome.value = ScanOutcome.Confirmed(name)
                 return
             }
 
             delay(PairingRetry)
         }
 
+        // Nothing was paired. Saying so is the whole point: a phone listed here that has never
+        // heard of this one is worse than no phone at all, because it looks like it would answer.
+        verifiedKeys.forget(payload.deviceId)
         _outcome.value = ScanOutcome.Failed(
-            "Paired here, but ${payload.name.ifBlank { "that phone" }} could not be reached on " +
-                "this network to be told. Both phones have to be on the same WiFi."
+            "$name could not be reached on this network. Both phones need the app open on the " +
+                "same WiFi. Nothing was paired."
         )
     }
 
@@ -310,17 +317,12 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         // With no accounts, a scan is the whole of pairing: the key was read off the screen, so
         // it is confirmed, and there is no link to make because there are no accounts to link.
         if (local.enabled) {
-            local.remember(
-                id = payload.deviceId,
-                name = payload.name.ifBlank { "The other phone" },
-                publicKey = payload.publicKey
-            )
+            // The key is confirmed the moment it is read off the screen — that is what a scan is
+            // for. Being paired is a different claim, and a mutual one: it waits until the other
+            // phone has actually been told, or this list fills up with phones that have never
+            // heard of it.
             verifiedKeys.pin(payload.deviceId, payload.publicKey)
-
-            // And tell it who did the scanning, so it can pin this phone in return — the same
-            // one-scan-settles-both the server does over its hub.
             viewModelScope.launch { tellThemWhoScanned(payload) }
-            calls.refresh()
             return
         }
 
