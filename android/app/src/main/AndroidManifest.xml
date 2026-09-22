@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Scanning the other phone's pairing code, and sending video when asked to. Not required:
+         a phone with no camera can still show its own code and still be the one listening. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The recording half of a monitor. Asked for when this phone is told to start sending,
+         not at launch: a phone that only ever listens never needs it. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Filming and listening with the screen off. Android stops a background process using the
+         camera or the microphone; a service of these types is what a phone on a shelf runs on. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!-- The ongoing notification that says this phone is monitoring. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Turning the screen on to light the room. The lock is always taken with a timeout. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- An alarm that is going off may put a screen in front of somebody, and the app whose alarm
+         it is inherits that while it fires. It is how an alarm clock wakes a locked phone, and it
+         is how the light does. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- Holding this is what lets a background app show a screen at all: it is the one exemption
+         from the ban on starting an activity from the background, and the one thing several
+         manufacturers honour when they ignore a full-screen intent. Granted by hand, never at
+         install, so nothing here happens without somebody allowing it. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@android:drawable/ic_menu_compass"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Babyphone">
+
+        <!-- Types declared here as well as at startForeground, or the service is refused. -->
+        <service
+            android:name=".media.MonitorService"
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone" />
+
+        <!-- The light. Its own task so lighting the room never disturbs whatever the phone was
+             showing, and off the recents list because it is not somewhere you go back to. -->
+        <activity
+            android:name=".media.LightActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:showOnLockScreen="true"
+            android:theme="@style/Theme.Babyphone" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Babyphone">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug adds two things to the release policy: cleartext, so a laptop-hosted server on the LAN
+  works with no certificate at all, and user-installed anchors, so a throwaway CA can be trusted
+  without rebuilding.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config>
+        <domain includeSubdomains="true">kalinka-work.lqy.ch</domain>
+        <trust-anchors>
+            <certificates src="@raw/lqy_ca" />
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

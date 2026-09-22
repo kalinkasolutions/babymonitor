@@ -1,0 +1,55 @@
+root = true
+
+[*.cs]
+# CA1873: Avoid potentially expensive logging.
+# Our logging calls only pass value-type args (Guids) that get boxed into the
+# params array; that cost is negligible for this app, so the rule is noise.
+dotnet_diagnostic.CA1873.severity = none
+
+# --- Async correctness ---
+# Built-in .NET analyzers (kept at default level otherwise) — promote the async ones.
+dotnet_diagnostic.CA1849.severity = warning      # call the async method when in an async method
+dotnet_diagnostic.CA2012.severity = warning      # use ValueTasks correctly
+dotnet_diagnostic.CA2016.severity = warning      # forward CancellationToken to methods that take one
+
+# Microsoft.VisualStudio.Threading.Analyzers (VSTHRD*).
+# Keep the ones that catch real bugs (deadlocks, forgotten awaits) as warnings.
+dotnet_diagnostic.VSTHRD002.severity = warning   # sync-blocking on async (.Result/.Wait())
+dotnet_diagnostic.VSTHRD100.severity = warning   # async void
+# VSTHRD103 disabled: it false-positives on EF's synchronous Add/AddRange, and the
+# built-in CA1849 already covers genuine call-async-in-async cases without that noise.
+dotnet_diagnostic.VSTHRD103.severity = none
+dotnet_diagnostic.VSTHRD110.severity = warning   # observe result of async calls (forgotten await)
+# Library/style-oriented rules — noise for an app.
+dotnet_diagnostic.VSTHRD111.severity = none      # use ConfigureAwait(bool)
+dotnet_diagnostic.VSTHRD200.severity = none      # Async suffix naming
+
+# --- Built-in CA pitfall rules (off/hidden by default) worth promoting ---
+dotnet_diagnostic.CA2100.severity = warning      # possible SQL injection in raw queries
+dotnet_diagnostic.CA2000.severity = warning      # disposable not disposed before out of scope
+dotnet_diagnostic.CA1307.severity = warning      # string op without explicit StringComparison
+dotnet_diagnostic.CA1310.severity = warning      # culture-dependent string comparison bug
+dotnet_diagnostic.CA1854.severity = warning      # dictionary double-lookup (use TryGetValue)
+dotnet_diagnostic.CA2201.severity = warning      # do not throw reserved exception types
+
+# --- Meziantou.Analyzer: silence opinion/style rules, keep the pitfall ones ---
+dotnet_diagnostic.MA0004.severity = none         # ConfigureAwait — app code, same as CA2007
+dotnet_diagnostic.MA0048.severity = none         # filename==typename — breaks on EF migrations
+dotnet_diagnostic.MA0016.severity = none         # return the collection abstraction (style)
+dotnet_diagnostic.MA0051.severity = none         # method is too long (style)
+dotnet_diagnostic.MA0002.severity = none         # IEqualityComparer<string> — ordinal is intended here
+dotnet_diagnostic.MA0015.severity = none         # duplicate of Sonar S3928
+
+# --- SonarAnalyzer: silence pure-style rules ---
+dotnet_diagnostic.S1135.severity = none          # complete the TODO comment
+dotnet_diagnostic.S3358.severity = none          # extract nested ternary (style)
+
+
+**/CoreList.IntegrationTests/**.cs]
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.MA0006.severity = none
+dotnet_diagnostic.MA0011.severity = none
+dotnet_diagnostic.MA0074.severity = none
+dotnet_diagnostic.S8969.severity = none
+
+dotnet_diagnostic.MA0007.severity = none

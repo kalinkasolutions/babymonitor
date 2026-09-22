@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Matte Orchid. The Compose scheme in ui/theme/Theme.kt is the same set; these exist for the
+     window the system paints before Compose is running. -->
+<resources>
+  <color name="md_primary_light">#8B5AA6</color>
+  <color name="md_on_primary_light">#FFFFFF</color>
+  <color name="md_primary_container_light">#EEDCF5</color>
+  <color name="md_on_primary_container_light">#341442</color>
+  <color name="md_secondary_light">#6B5C72</color>
+  <color name="md_secondary_container_light">#E8DFEA</color>
+  <color name="md_tertiary_light">#5E7C6E</color>
+  <color name="md_tertiary_container_light">#CDE5D8</color>
+  <color name="md_error_light">#BA5A50</color>
+  <color name="md_error_container_light">#F7DCD8</color>
+  <color name="md_surface_light">#F7F4F7</color>
+  <color name="md_on_surface_light">#1D1A20</color>
+  <color name="md_surface_variant_light">#E7DFE8</color>
+  <color name="md_on_surface_variant_light">#4A444D</color>
+  <color name="md_surface_container_light">#EEE9F0</color>
+  <color name="md_outline_light">#7B7480</color>
+  <color name="md_outline_variant_light">#CCC4CE</color>
+
+  <color name="md_primary_dark">#D2A8E4</color>
+  <color name="md_on_primary_dark">#40234C</color>
+  <color name="md_primary_container_dark">#5A3A69</color>
+  <color name="md_on_primary_container_dark">#F0DBF9</color>
+  <color name="md_secondary_dark">#CFC0D4</color>
+  <color name="md_secondary_container_dark">#4E4553</color>
+  <color name="md_tertiary_dark">#A8C9B5</color>
+  <color name="md_tertiary_container_dark">#36523F</color>
+  <color name="md_error_dark">#DFA9A2</color>
+  <color name="md_error_container_dark">#67332C</color>
+  <color name="md_surface_dark">#141216</color>
+  <color name="md_on_surface_dark">#E6E0E8</color>
+  <color name="md_surface_variant_dark">#4A444D</color>
+  <color name="md_on_surface_variant_dark">#CCC4CE</color>
+  <color name="md_surface_container_dark">#201D22</color>
+  <color name="md_outline_dark">#958E9A</color>
+  <color name="md_outline_variant_dark">#4A444D</color>
+</resources>

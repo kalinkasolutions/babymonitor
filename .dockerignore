@@ -1,0 +1,12 @@
+# Keep the build context small and reproducible.
+**/bin
+**/obj
+.git
+.github
+.idea
+.vs
+android
+data
+*.db
+*.db-shm
+*.db-wal

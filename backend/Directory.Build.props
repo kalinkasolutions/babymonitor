@@ -1,0 +1,25 @@
+<Project>
+  <PropertyGroup>
+    <!-- Keep the default analyzer level (no broad style-rule flood); async rules
+         are enabled explicitly by severity in .editorconfig. -->
+    <NoWarn>$(NoWarn);CA2007</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- VSTHRD* rules: blocking-on-async, async void, forgotten awaits, sync-over-async. -->
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <!-- SonarAnalyzer: correctness/bug-focused rules (null-deref, always-true conditions, ...). -->
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.30.0.144632">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <!-- Meziantou.Analyzer: general pitfalls (StringComparison, Task misuse, IDisposable, ...). -->
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.125">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

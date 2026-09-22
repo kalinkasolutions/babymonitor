@@ -1,0 +1,83 @@
+services:
+  app:
+    container_name: babyphone
+    image: kalinkasolutions/babyphone:latest
+    ports:
+      - "7881:5001"
+    restart: always
+    volumes:
+      # SQLite database and the Data Protection key ring. Without this, a redeploy loses every
+      # account and invalidates every issued cookie, signing all the phones out.
+      - ./data:/var/srv
+    environment:
+      - ASPNETCORE_URLS=http://+:5001
+      # .NET defaults to Production, which does not load appsettings.Development.json and so
+      # creates no seed accounts. Set Development on a machine where those known logins are
+      # wanted; leave it Production anywhere they would be a way in.
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
+      # Minimum log level written to the console and the SQLite "Logs" table. One of:
+      # Trace, Debug, Information, Warning, Error, Critical. Defaults to Information.
+      - Logging__LogLevel__Default=${LOG_LEVEL:-Information}
+      # How long a log line is kept in the "Logs" table before the sink prunes it.
+      - Logging__RetentionDays=${LOG_RETENTION_DAYS:-30}
+      # Email / SMTP settings (override appsettings.json "Email" section). Double underscores
+      # map to config nesting. Put secrets in a .env file next to this compose file rather than
+      # committing them; BaseUrl must be the app's public origin, because confirmation and
+      # invitation links are followed from a mail client and land on the API itself.
+      - Email__SmtpHost=${EMAIL_SMTP_HOST}
+      - Email__Port=${EMAIL_PORT:-587}
+      - Email__Username=${EMAIL_USERNAME}
+      - Email__Password=${EMAIL_PASSWORD}
+      - Email__FromAddress=${EMAIL_FROM_ADDRESS}
+      - Email__FromName=${EMAIL_FROM_NAME:-Babyphone}
+      - Email__SecureSocketOptions=${EMAIL_SECURE_SOCKET_OPTIONS:-StartTls}
+      - Email__BaseUrl=${EMAIL_BASE_URL}
+      # The relay. This secret is shared with coturn below — the backend signs credentials with
+      # it and coturn recomputes the same signature, which is why there are no accounts to
+      # provision. Leave it blank to run with no relay at all: two phones on one WiFi never need
+      # one, and most connections across the internet manage without it too.
+      # Two names on purpose. Relayed media is UDP straight to this host and cannot be proxied,
+      # so TURN_HOST must point here. TURNS_HOST is whatever terminates TLS — a reverse proxy
+      # elsewhere, most likely — and is only used by the one path that needs to look like HTTPS.
+      - Turn__Secret=${TURN_SECRET:-}
+      - Turn__Urls__0=stun:${TURN_HOST}:3478
+      - Turn__Urls__1=turn:${TURN_HOST}:3478?transport=udp
+      - Turn__Urls__2=turn:${TURN_HOST}:3478?transport=tcp
+      - Turn__Urls__3=turns:${TURNS_HOST}:5349?transport=tcp
+
+  coturn:
+    container_name: babyphone-turn
+    image: coturn/coturn:4.7-alpine
+    restart: always
+
+    # Host networking, not published ports. A relay hands out the address it sees itself on, and
+    # behind Docker's NAT that is a container address no phone can reach. It also avoids one
+    # userland proxy process per port in the relay range.
+    network_mode: host
+
+    # The secret arrives on the command line from the environment, so turnserver.conf holds no
+    # credentials and can be committed as it stands.
+    command: >
+      -c /etc/coturn/turnserver.conf
+      --realm=${TURN_HOST}
+      --server-name=${TURN_HOST}
+      --listening-ip=${TURN_LISTENING_IP}
+      --static-auth-secret=${TURN_SECRET:?set TURN_SECRET in .env}
+      --no-tls
+      --no-dtls
+      ${TURN_TEST_PEERS:+--allowed-peer-ip=$TURN_TEST_PEERS}
+
+    # No certificate here. TLS for the relay is terminated by the proxy that already has one,
+    # which forwards the plain TCP to 3478 — see docker-compose.turns.yml for the other way round.
+    volumes:
+      - ./deploy/turn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+
+    # Just "is it answering on 3478": a real STUN exchange needs a credential, and minting one
+    # here would mean putting the secret in a second place. Probes the pinned listening address
+    # rather than loopback, which coturn deliberately no longer binds.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z -u -w1 ${TURN_LISTENING_IP} 3478 || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

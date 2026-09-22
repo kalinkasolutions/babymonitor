@@ -1,0 +1,30 @@
+# Terminating TLS in the relay itself, for when this host is the one holding the certificate.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.turns.yml up -d
+#
+# The usual arrangement is the other way round: a reverse proxy that already has a certificate
+# listens on 5349 and forwards the plain TCP to this container's 3478, so no private key has to
+# be copied here at all.
+services:
+  coturn:
+    # The image runs coturn as nobody, which cannot read a mode-600 private key. Running as the
+    # key's owner keeps TLS working without making the key world-readable or running as root.
+    user: "${TLS_KEY_UID:?set TLS_KEY_UID to the owner of the private key}:${TLS_KEY_GID:-1000}"
+
+    command: >
+      -c /etc/coturn/turnserver.conf
+      --realm=${TURN_HOST}
+      --server-name=${TURN_HOST}
+      --listening-ip=${TURN_LISTENING_IP}
+      --static-auth-secret=${TURN_SECRET:?set TURN_SECRET in .env}
+      --tls-listening-port=5349
+      --cert=/etc/coturn/tls.crt
+      --pkey=/etc/coturn/tls.key
+      --no-tlsv1
+      --no-tlsv1_1
+      ${TURN_TEST_PEERS:+--allowed-peer-ip=$TURN_TEST_PEERS}
+
+    volumes:
+      - ./deploy/turn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ${TLS_CERT_PATH:?set TLS_CERT_PATH}:/etc/coturn/tls.crt:ro
+      - ${TLS_KEY_PATH:?set TLS_KEY_PATH}:/etc/coturn/tls.key:ro

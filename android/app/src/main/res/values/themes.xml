@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Follows the system so the window behind Compose matches the scheme Compose picks;
+         a fixed light or dark parent here shows as a flash of the wrong colour at launch. -->
+    <style name="Theme.Babyphone" parent="@android:style/Theme.DeviceDefault.DayNight" >
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <!-- The surface Compose will paint anyway, so the launch window is already that colour
+             rather than the device default's white. -->
+        <item name="android:windowBackground">@color/md_surface_light</item>
+    </style>
+</resources>

@@ -1,0 +1,17 @@
+# .NET
+bin/
+obj/
+*.db
+*.db-shm
+*.db-wal
+
+# Android
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+*.apk
+
+# Secrets
+.env
+data/

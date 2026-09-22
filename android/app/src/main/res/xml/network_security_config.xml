@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The backend's certificate comes from the private FreeIPA CA at ipa.lqy.ch, which Android does
+  not know. Rather than asking every phone to install that CA by hand — a manual step that also
+  needs a screen lock and shows a permanent "network may be monitored" warning — the CA is
+  bundled in the app and trusted for this one domain.
+
+  System anchors stay listed beside it, so moving the host to a publicly trusted certificate
+  later needs no app change.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config>
+        <domain includeSubdomains="true">kalinka-work.lqy.ch</domain>
+        <trust-anchors>
+            <certificates src="@raw/lqy_ca" />
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>
