@@ -27,6 +27,8 @@ Three media paths, picked automatically by ICE in this order:
 
 Two signalling paths, so the normal case does not depend on the internet:
 
+- [ ] Untested between two real phones: an emulator is behind its own NAT, so mDNS never
+      reaches it and the serverless path cannot be exercised with one
 - [x] Discovery and SDP exchange over the LAN (Android NSD / mDNS), no backend involved: each
       phone announces itself as `_babyphone._tcp` and hands the other its offer on a local
       socket, tried before the hub and falling back to it

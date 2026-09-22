@@ -239,7 +239,12 @@ cleartext, so a laptop on the LAN works with no certificate at all.
 
 ### Emulator
 
-Only useful for UI work — no real microphone, no Doze, no lock screen, no NAT.
+Only useful for UI work — no real microphone, no Doze, no lock screen.
+
+**Pairing without an account cannot be tested here at all.** An emulator sits behind its own
+virtual NAT, so mDNS multicast never crosses between it and the machines on your WiFi, and its
+address is not routable from a phone. Two real phones on one network are the only way to exercise
+it — which is the case it exists for.
 
 ```bash
 ls -l /dev/kvm                       # required
