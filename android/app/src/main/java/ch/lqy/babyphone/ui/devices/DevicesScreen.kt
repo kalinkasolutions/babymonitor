@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.lqy.babyphone.device.DeviceListItem
 import ch.lqy.babyphone.device.DevicesViewModel
@@ -57,6 +58,13 @@ fun DevicesScreen(onConnect: () -> Unit, viewModel: DevicesViewModel = viewModel
     var pendingRemoval by remember { mutableStateOf<DeviceListItem?>(null) }
     var pendingUnlink by remember { mutableStateOf<DeviceDto?>(null) }
     var comparing by remember { mutableStateOf<DeviceListItem?>(null) }
+
+    // Coming back from pairing is the usual way a phone appears here, and the screen behind it
+    // was never told.
+    LifecycleResumeEffect(Unit) {
+        viewModel.refresh()
+        onPauseOrDispose { }
+    }
 
     comparing?.let { item ->
         CompareDialog(

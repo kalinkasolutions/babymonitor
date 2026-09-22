@@ -173,6 +173,7 @@ class CallCenter private constructor(private val context: Context) {
     private var dropped: Job? = null
     private var answering: Job? = null
     private var pathWatch: Job? = null
+    private var localWatch: Job? = null
 
     /** What this phone asked for, so it can ask again. Cleared only when somebody says stop. */
     private var wanted: Pair<String, Boolean>? = null
@@ -308,10 +309,20 @@ class CallCenter private constructor(private val context: Context) {
         // phones there are, and whether they can answer is a question for the WiFi.
         if (local.enabled) {
             _others.value = local.peers()
-            scope.launch {
-                while (true) {
-                    _online.value = _others.value.filter { lan.reachable(it.id) }.map { it.id }.toSet()
-                    delay(PresenceInterval)
+
+            // One watcher, however often this is called: it re-reads the paired phones as well as
+            // who is answering, so a phone paired a moment ago turns up without a restart.
+            if (localWatch == null) {
+                localWatch = scope.launch {
+                    while (true) {
+                        _others.value = local.peers()
+                        _online.value = _others.value
+                            .filter { lan.reachable(it.id) }
+                            .map { it.id }
+                            .toSet()
+
+                        delay(PresenceInterval)
+                    }
                 }
             }
 

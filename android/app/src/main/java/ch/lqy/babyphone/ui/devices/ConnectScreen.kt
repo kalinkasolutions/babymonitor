@@ -167,7 +167,7 @@ private fun ShowCode(
         Spacer(Modifier.height(20.dp))
         QrCode(payload, size = 240.dp)
 
-        if (shortCode != null) {
+        if (!shortCode.isNullOrBlank()) {
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))

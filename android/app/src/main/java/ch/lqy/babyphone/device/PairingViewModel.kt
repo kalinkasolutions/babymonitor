@@ -84,6 +84,45 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
      * ever on this screen. Without that proof this is just a stranger claiming to be a baby
      * monitor, which is why it is the only unverified message the app accepts.
      */
+    /**
+     * Hands the other phone this one's key, with the proof that its screen was just read.
+     *
+     * Kept trying for a while, because mDNS has not necessarily noticed the other phone yet: the
+     * QR was read in a second and a service announcement can take several. Failing silently here
+     * would leave two phones each believing something different about whether they are paired.
+     */
+    private suspend fun tellThemWhoScanned(payload: PairingPayload) {
+        val message = SignalMessage(
+            toDeviceId = payload.deviceId,
+            kind = SignalKinds.Pair,
+            body = json.encodeToString(
+                PairRequest(
+                    deviceId = local.deviceId,
+                    name = local.name,
+                    publicKey = DeviceIdentity.publicKey(),
+                    proof = PairingProof.sign(
+                        secret = payload.secret,
+                        deviceId = local.deviceId,
+                        publicKey = DeviceIdentity.publicKey()
+                    )
+                )
+            )
+        )
+
+        repeat(PairingAttempts) {
+            if (calls.sendLocally(message)) {
+                return
+            }
+
+            delay(PairingRetry)
+        }
+
+        _outcome.value = ScanOutcome.Failed(
+            "Paired here, but ${payload.name.ifBlank { "that phone" }} could not be reached on " +
+                "this network to be told. Both phones have to be on the same WiFi."
+        )
+    }
+
     private fun listenForLocalPairing() {
         viewModelScope.launch {
             calls.pairings.collect { signal ->
@@ -101,6 +140,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
 
                 local.remember(request.deviceId, request.name.ifBlank { "The other phone" }, request.publicKey)
                 verifiedKeys.pin(request.deviceId, request.publicKey)
+                calls.refresh()
                 _outcome.value = ScanOutcome.ConfirmedByScanner(
                     request.name.ifBlank { "The other phone" }
                 )
@@ -279,28 +319,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
 
             // And tell it who did the scanning, so it can pin this phone in return — the same
             // one-scan-settles-both the server does over its hub.
-            viewModelScope.launch {
-                calls.sendLocally(
-                    SignalMessage(
-                        toDeviceId = payload.deviceId,
-                        kind = SignalKinds.Pair,
-                        body = json.encodeToString(
-                            PairRequest(
-                                deviceId = local.deviceId,
-                                name = local.name,
-                                publicKey = DeviceIdentity.publicKey(),
-                                proof = PairingProof.sign(
-                                    secret = payload.secret,
-                                    deviceId = local.deviceId,
-                                    publicKey = DeviceIdentity.publicKey()
-                                )
-                            )
-                        )
-                    )
-                )
-            }
-
-            _outcome.value = ScanOutcome.Confirmed(payload.name.ifBlank { "The other phone" })
+            viewModelScope.launch { tellThemWhoScanned(payload) }
+            calls.refresh()
             return
         }
 
@@ -360,5 +380,9 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     private companion object {
         /** Enough to cover a code rolling over while somebody is walking between two phones. */
         const val RememberedSecrets = 3
+
+        /** Long enough for mDNS to notice the other phone, which is seconds rather than instant. */
+        const val PairingAttempts = 30
+        const val PairingRetry = 500L
     }
 }
