@@ -1,4 +1,4 @@
-# Babyphone
+# Babymonitor
 
 Two Android phones: one in the room with the baby, one with you. Audio and video go directly
 between them, encrypted end to end; the server only introduces them to each other. See
@@ -43,12 +43,12 @@ name is enough if nginx and Docker are the same machine.
 
 ### 3. nginx
 
-Copy [deploy/nginx/babyphone.conf](deploy/nginx/babyphone.conf), replace the three placeholders in
+Copy [deploy/nginx/babymonitor.conf](deploy/nginx/babymonitor.conf), replace the three placeholders in
 it, and include it from the **top level** of `nginx.conf` — beside `events` and `http`, not inside
 them, because the `stream` block cannot go anywhere else:
 
 ```nginx
-include /etc/nginx/babyphone.conf;
+include /etc/nginx/babymonitor.conf;
 ```
 
 If your `nginx.conf` already has an `http` block, move the `server` sections from that file into
@@ -62,6 +62,8 @@ cp .env.example .env
 
 | | |
 |---|---|
+| `PROXY_TRUST_ANY` | `true`, unless nginx is on another machine — see below |
+| `APP_BIND_ADDRESS` | `127.0.0.1`, unless nginx is on another machine |
 | `TURN_SECRET` | `openssl rand -base64 32` |
 | `TURN_HOST` | `turn.example.com` |
 | `TURNS_HOST` | `baby.example.com` |
@@ -71,6 +73,36 @@ cp .env.example .env
 
 Behind NAT, also uncomment `external-ip=<public>/<private>` in
 [deploy/turn/turnserver.conf](deploy/turn/turnserver.conf).
+
+#### Telling the app about nginx
+
+nginx terminates TLS and hands the app plain HTTP, so the app only knows the request was
+encrypted because nginx says so in `X-Forwarded-Proto`. Anyone who can reach the app's port could
+say the same thing, so it is believed only from an address you name — and the framework's own
+default is loopback, which inside a container is nobody at all. Get this wrong and nothing breaks
+loudly: the app just treats every request as cleartext from nginx's own address, and says so once
+at startup.
+
+**Same machine** — the default, and the simple case. The port is bound to `127.0.0.1`, so nothing
+but nginx can reach it, and the app believes whatever reaches it:
+
+```bash
+APP_BIND_ADDRESS=127.0.0.1      # nothing else can get to the port
+PROXY_TRUST_ANY=true
+```
+
+**nginx elsewhere** — the port has to be open, so trust an address instead of anyone:
+
+```bash
+APP_BIND_ADDRESS=0.0.0.0
+PROXY_TRUST_ANY=false
+PROXY_TRUSTED=10.0.0.5          # nginx's address, or a CIDR range
+```
+
+Which address to name is whatever nginx appears as *from inside the container*, and that depends
+on how it reaches the port — a proxy dialling `127.0.0.1` on the same host arrives as the Docker
+bridge gateway, one dialling the host's own address arrives as that address, and one on another
+machine arrives as itself. `docker logs babymonitor | grep -i proxy` says what was configured.
 
 ### 5. Start
 
@@ -82,19 +114,32 @@ Keep `./data` — it holds the database and the key ring that keeps phones signe
 
 The image comes from Docker Hub, built by
 [the release workflow](.github/workflows/docker-publish.yml) when a release is published. To build
-it yourself: `docker build -t kalinkasolutions/babyphone:latest .`
+it yourself: `docker build -t kalinkasolutions/babymonitor:latest .`
 
 ### 6. Check
 
 ```bash
 curl https://baby.example.com/api/auth/status       # {"authenticated":false,...}
 nc -zvu turn.example.com 3478                       # from outside the network
-docker logs babyphone-turn | grep -i error          # quiet
+docker logs babymonitor-turn | grep -i error          # quiet
 ```
 
 ---
 
 ## Install the app
+
+Download `babymonitor-<version>.apk` from the
+[latest release](../../releases/latest) and open it on the phone. Android will ask you to allow
+installing from wherever you downloaded it; that prompt is the one-off price of not being on an
+app store. Do it on both phones.
+
+**Pick one source and stay on it.** The releases here and the F-Droid build are signed with
+different keys — both genuine, neither able to update the other, because Android identifies an app
+by its signature. Moving between them means uninstalling first, and uninstalling throws away the
+phone's identity key and every pairing with it. Settings → About shows which one you have, as the
+short code after the commit.
+
+Or build it yourself:
 
 ```bash
 cd android
@@ -164,15 +209,17 @@ Then turn on **Settings → Always use the relay** in the app and watch the icon
 | `turns:` never connects, `turn:` fine | the certificate is not publicly trusted, or nginx's `stream` block is inside `http { }` |
 | Relay stops working after two months | the certificate renewed and nothing restarted coturn — see the renewal hook below |
 | Everyone signed out after a redeploy | `./data` was not persisted |
+| Every log line says the same client address | `PROXY_TRUST_ANY`/`PROXY_TRUSTED` not set, so `X-Forwarded-For` is ignored |
+| "Too many attempts" on a normal sign-in | a household shares one address; raise `RATE_LIMIT_CREDENTIALS` |
 | "Not reachable" next to a phone | that phone has no connection to the server; open the app on it |
 | The room stays dark on video | the phone in the room lacks "display over other apps" |
 
 coturn reads its certificate once at startup, so give the renewal a hook:
 
 ```bash
-# /etc/letsencrypt/renewal-hooks/deploy/babyphone-turn.sh   (chmod +x)
+# /etc/letsencrypt/renewal-hooks/deploy/babymonitor-turn.sh   (chmod +x)
 #!/bin/sh
-docker restart babyphone-turn
+docker restart babymonitor-turn
 ```
 
 ---
@@ -181,11 +228,23 @@ docker restart babyphone-turn
 
 ```bash
 cd backend
-dotnet run --project Babyphone.Api        # https://*:5005, schema applied at startup
+dotnet run --project Babymonitor.Api        # https://*:5005, schema applied at startup
+dotnet test                               # the backend suite, on a disposable database
 
 cd android
 ./gradlew testDebugUnitTest               # JVM tests
 ```
+
+`Babymonitor.Tests` boots the real app with `WebApplicationFactory` against a temporary SQLite file
+rather than an in-memory provider, because most of what it is there to catch — a foreign key that
+refuses a delete, a pairing code two callers both redeem — only exists once the database is real.
+It runs as `Production`, so the password rules and the seeding are the ones a deployment gets.
+
+Passwords must be at least ten characters outside Development, where the minimum drops to four
+so the seed accounts below still work. The rule lives in Identity's options rather than on the
+DTOs for exactly that reason; the app's own check is in
+[PasswordRules.kt](android/app/src/main/java/ch/lqy/babymonitor/ui/PasswordRules.kt) and has to be
+kept in step by hand.
 
 In Development the accounts in `SeedUsers` are created at startup, with known passwords and the
 email already confirmed. An environment check in `Seed.cs` means a stray `SeedUsers` section in
@@ -203,8 +262,119 @@ land on the API itself, which renders a small page, because there is no web fron
 A migration:
 
 ```bash
-dotnet ef migrations add <Name> --project Babyphone.Dal --startup-project Babyphone.Api
+dotnet ef migrations add <Name> --project Babymonitor.Dal --startup-project Babymonitor.Api
 ```
+
+### Cutting a release
+
+Publishing a release on GitHub builds both halves:
+[the backend image](.github/workflows/docker-publish.yml) and
+[the APK](.github/workflows/android-release.yml), which is attached to the release for people to
+install from.
+
+1. Bump `versionCode` **and** `versionName` in
+   [android/app/build.gradle.kts](android/app/build.gradle.kts). Android decides what counts as an
+   upgrade by `versionCode`, so publishing the same one twice produces a release nobody can install
+   over the last. The workflow refuses if the tag and `versionName` disagree.
+2. Tag it to match — `v0.2` for `versionName = "0.2"` — and publish the release.
+
+The APK is a **release** build, never a debug one: a debug build points at a development server,
+trusts user-installed certificate authorities and permits cleartext, all of which are right for a
+laptop on the LAN and wrong in somebody else's house.
+
+#### The signing key
+
+Four secrets, all describing one keystore. Put them on the workflow's `release` **environment**
+rather than on the repository: repository secrets are readable by every workflow in the repo, and
+this is the one credential that decides whether a build is the app people already have. An
+environment can also be given a protection rule, so a release waits for you to approve it.
+
+| secret | |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 release.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | |
+| `ANDROID_KEY_ALIAS` | |
+| `ANDROID_KEY_PASSWORD` | |
+
+```bash
+keytool -genkeypair -v -keystore release.jks -alias babymonitor \
+        -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 release.jks          # paste into ANDROID_KEYSTORE_BASE64
+```
+
+**Back that file up somewhere outside this repository, and never replace it.** Android identifies
+an app by its signing key. A release signed with a different key is not an upgrade to the one
+people have — it will not install over it, and uninstalling to make room throws away the identity
+key in that phone's keystore, and with it every pairing on both phones.
+
+GitHub is not that backup. Secrets are write-only: once set, `ANDROID_KEYSTORE_BASE64` cannot be
+read back out, so a copy there is a copy you cannot recover. Keep the `.jks` and its three
+passwords together in a password manager, and a second copy offline. It is four kilobytes.
+
+#### Two signatures, on purpose
+
+The app is published twice: here, signed with the project's key, and on F-Droid, signed with
+theirs. That is the normal arrangement and both are real. What it costs is that the two
+populations never mix — an update from the other source is refused, not installed.
+
+The trap is that F-Droid's client lists an app it did not install as installed and offers the
+update anyway, so somebody who installed from GitHub can be walked into a failure with no
+explanation attached. Hence the signing key in Settings → About: it is the first eight characters
+of the signing certificate, the same value `apksigner` prints, so "which build have you got" has a
+short answer somebody can read off a screen.
+
+```bash
+apksigner verify --print-certs babymonitor-0.2.apk   # matches what About shows
+```
+
+#### Checking a download
+
+Two different questions, and they need different answers.
+
+**"Is this the same app I already have?"** is the one Android asks, on every install. The
+certificate inside an APK is self-signed, and there is no authority for Android to consult, so
+all it does is compare that certificate to the one already on the phone. The run summary prints its
+fingerprint, so a release can be compared against the last:
+
+```bash
+apksigner verify --print-certs babymonitor-0.2.apk
+```
+
+**"Did this file come out of that repository?"** is the one the signature cannot answer, because
+anybody can self-sign. The workflow attests the APK with
+[GitHub's build provenance](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds),
+signed with the run's own short-lived identity rather than any stored key:
+
+```bash
+gh attestation verify babymonitor-0.2.apk --repo <owner>/babymonitor
+```
+
+That names the workflow, the repository and the commit the APK was built from.
+
+**"Is this really built from that source?"** is the one nobody has to take on trust, because the
+release build is reproducible: the same commit, built again, produces the same bytes. The app
+says which commit it is under Settings → About, and the attestation above says so independently.
+Either way, you can go and check:
+
+```bash
+git checkout <that commit>
+cd android && ./gradlew clean assembleRelease
+./verify-apk.py ~/Downloads/babymonitor-0.2.apk
+```
+
+[verify-apk.py](android/verify-apk.py) compares every entry inside the two archives — the code,
+the resources, the native libraries. It compares the contents rather than the files, because the
+published APK carries a signature block a local build cannot reproduce and should not: that block
+*is* the signature, and `apksigner` is what checks it. This checks the other half, that what was
+signed is what the source builds.
+
+Reproducibility is a property that breaks quietly — a timestamp or a build number compiled into
+the APK is enough — so there is a note on `buildConfigField` in
+[build.gradle.kts](android/app/build.gradle.kts) saying so. Verified two ways here: two clean
+builds of the same commit, and a build from a different directory, all three byte-identical.
+
+None of this is something a parent installing a monitor will do. It is there so that somebody
+*can*, and so that the answer does not rest on trusting this repository, GitHub, or me.
 
 ### Integration tests
 
@@ -213,13 +383,13 @@ skips itself when there is none, so an ordinary test run stays green. Start a di
 its own database:
 
 ```bash
-ConnectionStrings__Babyphone="Data Source=/tmp/babyphone-test.db" \
-DataProtection__KeyPath=/tmp/babyphone-test-keys \
+ConnectionStrings__Babymonitor="Data Source=/tmp/babymonitor-test.db" \
+DataProtection__KeyPath=/tmp/babymonitor-test-keys \
 ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://127.0.0.1:5199 \
-dotnet run --project backend/Babyphone.Api --no-launch-profile
+dotnet run --project backend/Babymonitor.Api --no-launch-profile
 ```
 
-Point it elsewhere with `BABYPHONE_URL`. What it cannot cover is the media: that needs two real
+Point it elsewhere with `BABYMONITOR_URL`. What it cannot cover is the media: that needs two real
 phones.
 
 ### Both phones at once
@@ -250,9 +420,9 @@ it — which is the case it exists for.
 ls -l /dev/kvm                       # required
 sdkmanager --install "emulator" "platform-tools" \
            "system-images;android-36;google_apis;x86_64"
-avdmanager create avd -n babyphone \
+avdmanager create avd -n babymonitor \
            -k "system-images;android-36;google_apis;x86_64" -d pixel_7
-$ANDROID_HOME/emulator/emulator -avd babyphone -camera-back webcam0 &
+$ANDROID_HOME/emulator/emulator -avd babymonitor -camera-back webcam0 &
 ```
 
 `google_apis` rather than `google_apis_playstore`, because the Play Store images cannot be rooted.

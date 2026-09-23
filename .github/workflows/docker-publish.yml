@@ -34,6 +34,6 @@ jobs:
         run: |
           docker buildx build \
             --platform linux/amd64 \
-            -t ${{ secrets.DOCKER_HUB_USERNAME }}/babyphone:${{ github.ref_name }} \
-            -t ${{ secrets.DOCKER_HUB_USERNAME }}/babyphone:latest \
+            -t ${{ secrets.DOCKER_HUB_USERNAME }}/babymonitor:${{ github.ref_name }} \
+            -t ${{ secrets.DOCKER_HUB_USERNAME }}/babymonitor:latest \
             --push .

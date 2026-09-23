@@ -15,3 +15,7 @@ android/local.properties
 # Secrets
 .env
 data/
+# The release signing key. The workflow writes this out of a secret at build time; it must never
+# be committed, and losing it means no future release can upgrade the app people already have.
+*.jks
+*.keystore

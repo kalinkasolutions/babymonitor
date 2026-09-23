@@ -1,0 +1,164 @@
+# Builds the app and attaches the APK to the release, so a phone can install it straight from the
+# release page. Tagged releases only, like the backend image beside it.
+#
+# Needs four secrets, all describing one keystore:
+#   ANDROID_KEYSTORE_BASE64     base64 -w0 release.jks
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
+#
+# They belong on the `release` environment this job names rather than on the repository, so the
+# one workflow that needs the signing key is the only one that can read it — and so a rule can be
+# put in front of it. Repository secrets work too, and are read by every workflow in the repo.
+#
+# That keystore must be the same one every time, and must be backed up somewhere that is not this
+# repository. Android identifies an app by its signing key: a release signed with a different one
+# is not an upgrade to the one people have, it is a different app. It will not install over the
+# old one, and uninstalling to make room throws away the identity key in that phone's keystore —
+# and with it every pairing, on both phones.
+#
+# The APK is also attested: GitHub signs its digest with this workflow's own identity, so anyone
+# can check a download came out of this repository rather than somewhere else. That needs no
+# stored key — it is the one signature here with nothing to lose.
+#
+# A debug build is deliberately not what ships. It defaults to a private server address, trusts
+# user-installed certificate authorities and permits cleartext, all of which are right for a
+# laptop on the LAN and wrong for anybody else's house.
+name: Build and Publish the Android App
+
+on:
+  release:
+    types: [ published ]
+
+permissions:
+  # The APK is uploaded to the release that triggered this, which is a write to the repository.
+  contents: write
+  # Provenance. These two buy a signature over the APK tied to this workflow's own identity, with
+  # no stored key behind it — the token is minted for this run and expires with it.
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # Named so the signing secrets can live here rather than on the repository, where every
+    # workflow could read them. Harmless until they are moved: a repository secret still resolves
+    # for a job in an environment, so this can be set up before or after.
+    environment: release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # The wrapper is a jar this job executes while the signing key is in reach, so it is checked
+      # against Gradle's published checksums before it gets to run.
+      - name: Validate the Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Before the key is anywhere near the runner: a release that fails its own tests should not
+      # get as far as being signed.
+      - name: Run the tests
+        working-directory: android
+        run: ./gradlew testReleaseUnitTest
+
+      - name: Write the signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set, so the APK would come out unsigned and no phone would install it. See the comment at the top of this workflow."
+            exit 1
+          fi
+          # Outside the checkout, so no build step can package it by accident.
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build the APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease
+
+      # The version lives in build.gradle.kts and the tag follows it, so a mismatch means somebody
+      # forgot to bump it. Worth stopping for: Android decides what is an upgrade by versionCode,
+      # so publishing the same one twice produces a release nobody can install over the last.
+      - name: Check the version matches the tag
+        working-directory: android
+        run: |
+          metadata=app/build/outputs/apk/release/output-metadata.json
+          version_name=$(jq -r '.elements[0].versionName' "$metadata")
+          version_code=$(jq -r '.elements[0].versionCode' "$metadata")
+          tag='${{ github.event.release.tag_name }}'
+
+          if [ "${tag#v}" != "$version_name" ]; then
+            echo "::error::Tag $tag does not match versionName $version_name. Bump versionCode and versionName in android/app/build.gradle.kts, then move the tag."
+            exit 1
+          fi
+
+          echo "VERSION_NAME=$version_name" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+
+      # Checked rather than assumed. An unsigned APK builds happily and fails at the one point
+      # nobody is watching — on somebody else's phone, with no way to say why.
+      - name: Verify the signature
+        working-directory: android
+        run: |
+          apksigner=$(ls -d "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/*/apksigner | sort -V | tail -1)
+          apk="babymonitor-$VERSION_NAME.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+
+          "$apksigner" verify --min-sdk-version 29 --print-certs "$apk"
+
+          # The fingerprint of the signing certificate, so anyone can check a download came from
+          # the same key as the last one — which is the check that actually means something on
+          # Android, and the reason the key must never change.
+          fingerprint=$("$apksigner" verify --print-certs "$apk" | grep -m1 'SHA-256 digest')
+          {
+            echo "### babymonitor $VERSION_NAME (versionCode $VERSION_CODE)"
+            echo
+            echo '```'
+            echo "sha256   $(sha256sum "$apk" | cut -d' ' -f1)"
+            echo "signer   $fingerprint"
+            echo '```'
+            echo
+            echo "Built from \`${{ github.sha }}\`. Check that for yourself:"
+            echo
+            echo '```'
+            echo "gh attestation verify $apk --repo ${{ github.repository }}"
+            echo "git checkout ${{ github.sha }}"
+            echo "cd android && ./gradlew clean assembleRelease && ./verify-apk.py $apk"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "APK=android/$apk" >> "$GITHUB_ENV"
+
+      # Says where this file came from, which the signature inside it cannot. The APK's own
+      # certificate is self-signed and answers only "is this an update to the app you have" —
+      # Android has no authority to consult and never asks anything else. This answers the other
+      # question, "did this come out of that repository's build", and is checked by a person:
+      #
+      #     gh attestation verify babymonitor-<version>.apk --repo <owner>/babymonitor
+      #
+      # Before the upload, so nothing gets published that could not be attested.
+      - name: Attest where this APK came from
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ env.APK }}
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # --clobber so re-running a failed publish replaces the asset instead of refusing.
+        run: gh release upload '${{ github.event.release.tag_name }}' "$APK" --clobber

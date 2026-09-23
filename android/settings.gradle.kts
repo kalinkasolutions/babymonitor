@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Babyphone"
+rootProject.name = "Babymonitor"
 include(":app")

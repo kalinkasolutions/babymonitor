@@ -1,4 +1,4 @@
-# Babyphone — plan
+# Babymonitor — plan
 
 Two Android phones running the same app. At any moment one is **recording** — sitting in the
 nursery with its camera and microphone — and one or more are **observing**, listening and
@@ -72,11 +72,21 @@ crosses the internet in the clear.
 
 What is *not* free is knowing **who** you are encrypted to. The SDP carries an
 `a=fingerprint:sha-256` line, and anyone who can rewrite it in flight can substitute their own
-and become a real man in the middle. Two things follow:
+and become a real man in the middle. Three things follow:
 
 - Signalling runs over HTTPS/WSS. Non-negotiable.
-- TLS protects the wire but not the server, so a compromised backend could in principle swap
-  fingerprints.
+- TLS protects the wire but not the server, so a compromised backend could otherwise swap
+  fingerprints without either phone noticing.
+- So every signalling message is signed by the sending phone's identity key, and the receiving
+  phone checks it against the key it confirmed off that phone's screen. The fingerprint is inside
+  what is signed. The backend relays the signature and cannot make one — the private half never
+  leaves the keystore — so it can drop a call or delay it, and cannot listen to one.
+
+A message that does not verify is dropped rather than acted on, which means a phone whose key
+nobody has confirmed cannot be listened to at all. That is the same bar the microphone already
+had, applied to both ends of the call instead of one: the phone being watched must trust who is
+watching, and the phone watching must trust what it is being sent, or a substituted stream is
+indistinguishable from a quiet room.
 
 ### Linking and trust are two different things
 

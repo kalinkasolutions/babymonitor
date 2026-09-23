@@ -1,9 +1,13 @@
 services:
   app:
-    container_name: babyphone
-    image: kalinkasolutions/babyphone:latest
+    container_name: babymonitor
+    image: kalinkasolutions/babymonitor:latest
+    # Bound to loopback by default, because the app trusts whatever the proxy in front tells it
+    # about the original request. Anything that can reach this port can claim to be that proxy.
+    # Set APP_BIND_ADDRESS to 0.0.0.0 only when nginx is on another machine, and then name that
+    # machine in PROXY_TRUSTED rather than leaving PROXY_TRUST_ANY on.
     ports:
-      - "7881:5001"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:7881:5001"
     restart: always
     volumes:
       # SQLite database and the Data Protection key ring. Without this, a redeploy loses every
@@ -15,6 +19,20 @@ services:
       # creates no seed accounts. Set Development on a machine where those known logins are
       # wanted; leave it Production anywhere they would be a way in.
       - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
+      # nginx terminates TLS and forwards plain HTTP, so only it knows the request was secure.
+      # Those headers are forgeable, so they are believed only from an address named here. The
+      # framework's own default is loopback, which inside a container means nobody — the proxy
+      # always arrives as something else, so without one of these two the headers are ignored and
+      # every request looks like plain HTTP from the proxy's own address.
+      - Proxy__TrustAny=${PROXY_TRUST_ANY:-true}
+      # Instead of TrustAny when the port is reachable by anything but the proxy. Addresses or
+      # CIDR ranges, numbered from zero: Proxy__Trusted__0, Proxy__Trusted__1, and so on.
+      - Proxy__Trusted__0=${PROXY_TRUSTED:-}
+      # How hard the endpoints an outsider can reach may be hammered. Counted per address, and a
+      # household is one address, so these are set where a family never notices them.
+      - RateLimits__CredentialsPerFiveMinutes=${RATE_LIMIT_CREDENTIALS:-20}
+      - RateLimits__PairingClaimsPerMinute=${RATE_LIMIT_PAIRING_CLAIMS:-10}
+      - RateLimits__InvitesPerHour=${RATE_LIMIT_INVITES:-5}
       # Minimum log level written to the console and the SQLite "Logs" table. One of:
       # Trace, Debug, Information, Warning, Error, Critical. Defaults to Information.
       - Logging__LogLevel__Default=${LOG_LEVEL:-Information}
@@ -29,7 +47,7 @@ services:
       - Email__Username=${EMAIL_USERNAME}
       - Email__Password=${EMAIL_PASSWORD}
       - Email__FromAddress=${EMAIL_FROM_ADDRESS}
-      - Email__FromName=${EMAIL_FROM_NAME:-Babyphone}
+      - Email__FromName=${EMAIL_FROM_NAME:-Babymonitor}
       - Email__SecureSocketOptions=${EMAIL_SECURE_SOCKET_OPTIONS:-StartTls}
       - Email__BaseUrl=${EMAIL_BASE_URL}
       # The relay. This secret is shared with coturn below — the backend signs credentials with
@@ -46,7 +64,7 @@ services:
       - Turn__Urls__3=turns:${TURNS_HOST}:5349?transport=tcp
 
   coturn:
-    container_name: babyphone-turn
+    container_name: babymonitor-turn
     image: coturn/coturn:4.7-alpine
     restart: always
 

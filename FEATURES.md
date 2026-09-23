@@ -1,4 +1,4 @@
-# Babyphone — feature checklist
+# Babymonitor — feature checklist
 
 Two Android phones running the same app. At any moment one is **recording** (camera/mic, in
 the room) and one or more are **observing** (listening, alerting). The mode is runtime state,
@@ -30,11 +30,15 @@ Two signalling paths, so the normal case does not depend on the internet:
 - [ ] Untested between two real phones: an emulator is behind its own NAT, so mDNS never
       reaches it and the serverless path cannot be exercised with one
 - [x] Discovery and SDP exchange over the LAN (Android NSD / mDNS), no backend involved: each
-      phone announces itself as `_babyphone._tcp` and hands the other its offer on a local
+      phone announces itself as `_babymonitor._tcp` and hands the other its offer on a local
       socket, tried before the hub and falling back to it
-- [x] Every local message signed with the sender's identity key and checked against the key this
-      phone confirmed in person — on a LAN there is no cookie to vouch for anyone, so a phone at
-      1 of 2 goes through the server instead
+- [x] Every signalling message signed with the sender's identity key and checked against the key
+      this phone confirmed in person, on both paths — the SDP's DTLS fingerprint is inside what is
+      signed, so a backend that rewrote it to read the media would be caught rather than obeyed
+- [x] A signal that does not verify is dropped, not acted on, so a phone whose key nobody has
+      confirmed cannot be listened to — the same bar the microphone had, now at both ends
+- [x] Signed messages carry the time they were signed, so one captured in flight cannot be
+      replayed later — a replayed "stop" would end a call
 - [x] Signalling through the backend when the phones are on different networks — offer,
       answer and candidates, addressed to one phone rather than to an account
 - [x] Keep working when the WAN is down but the WiFi is up — signalling over the LAN, media
@@ -80,8 +84,6 @@ Behaviour:
 
 - [x] Connection indicator on the observing phone: LAN / direct internet / relayed, read from
       the candidate pair ICE settled on and re-checked while the call runs
-- [x] A relay-only switch for testing, since two phones on one WiFi will never fall back on
-      their own and a fallback nobody has seen work is a guess
 - [ ] ICE restart on network change (WiFi to mobile, AP roaming)
 - [x] Automatic reconnect after a dropped connection, with backoff: the watching phone asks
       again at 2, 5, 15 then 30 seconds, for as long as somebody wants the call
@@ -128,10 +130,11 @@ A link decides visibility; trust is decided separately, on the phones:
 - [x] Both sides reach 2 of 2 from one comparison of the safety number, for two people with
       no camera between them
 - [x] Unlink an account again from the app
-- [ ] Refuse to stream to a phone whose key changed, rather than only warning
+- [x] Refuse to stream to a phone whose key changed, rather than only warning — a signal it
+      cannot sign for is dropped, so a changed key stops the call instead of colouring a badge
 
 ### Roles
-- [ ] Switch this phone between recording and observing at any time
+- [x] Switch this phone between recording and observing at any time
 - [ ] Switch the *other* phone's mode remotely
 - [ ] Swap both in one action, without re-pairing or signing out
 - [x] Camera and microphone permission requested on both phones at setup, since either
@@ -146,7 +149,7 @@ A link decides visibility; trust is decided separately, on the phones:
 - [ ] Autostart on boot
 - [ ] Service restarts itself after a crash or being killed
 - [ ] Screen pinning, so the app is not closed by accident
-- [ ] Guided setup for the battery-optimisation exemption (this is the usual failure)
+- [x] Guided setup for the battery-optimisation exemption (this is the usual failure)
 
 ### Observing mode
 - [x] Live audio, playing with the screen off

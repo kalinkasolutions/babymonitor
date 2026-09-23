@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <RootNamespace>Babymonitor</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
+          <PrivateAssets>all</PrivateAssets>
+          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+        <PackageReference Include="Serilog.Sinks.SQLite" Version="7.0.0" />
+        <!-- Serilog.Sinks.SQLite pulls its own (older) SQLitePCLRaw chain; pin the patched
+             native bundle here too (GHSA-2m69-gcr7-jv3q). -->
+        <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.4" />
+    </ItemGroup>
+    <ItemGroup>
+      <Content Include="EmailTemplates\**\*.html" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Babymonitor.BusinessLogic\Babymonitor.BusinessLogic.csproj" />
+      <ProjectReference Include="..\Babymonitor.Dal\Babymonitor.Dal.csproj" />
+      <ProjectReference Include="..\Babymonitor.Dtos\Babymonitor.Dtos.csproj" />
+    </ItemGroup>
+</Project>
