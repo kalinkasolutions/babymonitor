@@ -10,7 +10,11 @@ android/build/
 android/app/build/
 android/.gradle/
 android/local.properties
+android/.idea/
 *.apk
+
+# Byte-compiled verify-apk.py, which the tooling writes beside the script it belongs to.
+__pycache__/
 
 # Secrets
 .env

@@ -161,13 +161,9 @@ class MonitorService : Service() {
         }.isSuccess
 
         /**
-         * Whether this phone can raise its light over its own lock screen. Drawing over other
-         * apps is what the system treats as consent to show a screen from the background; the
-         * alarm route needs no permission but works only where exact alarms do.
+         * Drawing over other apps is what the system treats as consent to show a screen from the
+         * background, and is the first of the two routes [light] takes to reach a locked phone.
          */
-        fun canLightWhileLocked(context: Context): Boolean =
-            canStartFromBackground(context) || canScheduleExactAlarm(context)
-
         fun canStartFromBackground(context: Context): Boolean = Settings.canDrawOverlays(context)
 
         /**

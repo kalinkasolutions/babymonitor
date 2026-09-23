@@ -104,11 +104,6 @@ class ApiClient(context: Context) {
     suspend fun registerDevice(request: RegisterDeviceRequest): ApiResult<DeviceDto> =
         post("api/devices", json.encodeToString(request)) { json.decodeFromString(it) }
 
-    suspend fun renameDevice(deviceId: String, name: String): ApiResult<DeviceDto> =
-        put("api/devices/$deviceId/name", json.encodeToString(RenameDeviceRequest(name))) {
-            json.decodeFromString(it)
-        }
-
     suspend fun heartbeat(deviceId: String, request: HeartbeatRequest): ApiResult<Unit> =
         post("api/devices/$deviceId/heartbeat", json.encodeToString(request)) { Unit }
 
