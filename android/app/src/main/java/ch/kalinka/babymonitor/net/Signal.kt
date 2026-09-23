@@ -34,8 +34,9 @@ data class SignalMessage(
 
     /**
      * When this was signed, as milliseconds since the epoch. Inside the signature, so a message
-     * captured in flight is worthless once it has gone stale — a replayed "stop" would end a call,
-     * and a monitor that has been silently stopped is the failure this app cannot have.
+     * captured in flight is worthless once it has gone stale. That only bounds a replay rather
+     * than preventing one — a captured "stop" would still end a call if it came back inside the
+     * window — so [SignalReplayGuard] is what makes each of these good exactly once.
      */
     val sentAt: Long = 0,
 

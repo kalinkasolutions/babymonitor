@@ -23,6 +23,7 @@ import ch.kalinka.babymonitor.net.QualityRequest
 import ch.kalinka.babymonitor.net.SignalKinds
 import ch.kalinka.babymonitor.net.SignalMessage
 import ch.kalinka.babymonitor.net.SignalResult
+import ch.kalinka.babymonitor.net.SignalReplayGuard
 import ch.kalinka.babymonitor.net.SignalTrust
 import ch.kalinka.babymonitor.net.signed
 import ch.kalinka.babymonitor.net.trust
@@ -75,6 +76,7 @@ class CallCenter private constructor(private val context: Context) {
     /** Somebody scanned this phone's code and said so across the WiFi. */
     val pairings: SharedFlow<SignalMessage> = _pairings.asSharedFlow()
     private val verifiedKeys = VerifiedKeys(context)
+    private val replay = SignalReplayGuard()
     private val local = LocalSession(context)
     private val alarmSettings = AlarmSettings(context)
     private val callPreferences = CallPreferences(context)
@@ -188,12 +190,6 @@ class CallCenter private constructor(private val context: Context) {
     private var heardAt = 0L
 
     /**
-     * Runs only on the phone being watched, and only while it is. Every change goes down the data
-     * channel, so the other end hears about a charger being pulled out within a second of it
-     * happening rather than whenever somebody next opens a screen.
-     */
-
-    /**
      * Whether somebody is actually looking at the picture. An alarm is for the times nobody is:
      * a room that is being watched with the sound on needs no notification about being loud.
      */
@@ -207,6 +203,11 @@ class CallCenter private constructor(private val context: Context) {
             }
         }
 
+    /**
+     * Runs only on the phone being watched, and only while it is. Every change goes down the data
+     * channel, so the other end hears about a charger being pulled out within a second of it
+     * happening rather than whenever somebody next opens a screen.
+     */
     private val status = StatusMonitor(context) { current ->
         link?.send(json.encodeToString(RoomReport(status = current)))
     }
@@ -217,8 +218,6 @@ class CallCenter private constructor(private val context: Context) {
         if (!local.enabled) {
             listen()
         }
-
-        lan.start()
     }
 
     fun refresh() = load()
@@ -325,9 +324,6 @@ class CallCenter private constructor(private val context: Context) {
 
     fun hasCameraPermission(): Boolean = granted(Manifest.permission.CAMERA)
 
-    /** Whether the light can be raised over this phone's own lock screen. */
-    fun canLightWhileLocked(): Boolean = MonitorService.canLightWhileLocked(context)
-
     fun canStartFromBackground(): Boolean = MonitorService.canStartFromBackground(context)
 
     fun canScheduleExactAlarm(): Boolean = MonitorService.canScheduleExactAlarm(context)
@@ -342,6 +338,11 @@ class CallCenter private constructor(private val context: Context) {
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     private fun load() {
+        // Here rather than once at startup, because this phone has no id to announce until it has
+        // registered — and if that failed, the session would otherwise run to its end with no path
+        // across the WiFi and nothing to say so. A no-op once a socket is already listening.
+        lan.start()
+
         // With no account there is no list to fetch: the phones this one has scanned are the
         // phones there are, and whether they can answer is a question for the WiFi.
         if (local.enabled) {
@@ -463,6 +464,14 @@ class CallCenter private constructor(private val context: Context) {
     private fun thisDeviceId(): String? = if (local.enabled) local.deviceId else api.deviceId
 
     private fun onSignal(signal: SignalMessage) {
+        // Both paths arrive here, so this is the one place a message that has already been acted
+        // on can be turned away. A signature is good for a minute; whatever relayed it can offer
+        // it again inside that minute without being able to forge anything.
+        if (!replay.accept(signal)) {
+            Log.w(Tag, "Dropped a ${signal.kind} from ${signal.fromDeviceId}: already acted on")
+            return
+        }
+
         val from = signal.fromDeviceId
         when (signal.kind) {
             SignalKinds.Start -> {
@@ -734,9 +743,19 @@ class CallCenter private constructor(private val context: Context) {
                 dispatch(CallEvent.Stopped(effect.toDeviceId))
             }
 
+            // With no account the WiFi was the only path there ever was, and falling through to
+            // the hub only reports the absence of a server nobody asked for. What actually went
+            // wrong is the other phone not being on this network, which is the thing to say.
             SignalResult.Offline -> {
-                _message.value = "This phone has no connection to the server."
-                dispatch(CallEvent.Failure("No connection to the server."))
+                val reason = if (local.enabled) {
+                    "${nameOf(effect.toDeviceId)} is not on this WiFi. Both phones need the app " +
+                        "open on the same network."
+                } else {
+                    "This phone has no connection to the server."
+                }
+
+                _message.value = reason
+                dispatch(CallEvent.Failure(reason))
             }
 
             is SignalResult.Refused -> {
@@ -770,16 +789,6 @@ class CallCenter private constructor(private val context: Context) {
         }
     }
 
-    /**
-     * The alarm is raised here rather than on the phone in the room, because everything that
-     * decides it belongs to this end: the threshold somebody chose, whether the sound is off, and
-     * whether anybody is looking.
-     */
-    /**
-     * Whether the room is still answering. A phone that has run out of battery, been switched off
-     * or lost its network stops sending and looks from here exactly like a quiet room — which is
-     * the one failure a baby monitor must not have.
-     */
     /**
      * Asks again, further apart each time. A redial rather than an ICE restart: every way a call
      * dies — a network changing under it, a phone rebooting, a router blinking — is the same
@@ -849,6 +858,11 @@ class CallCenter private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Whether the room is still answering. A phone that has run out of battery, been switched off
+     * or lost its network stops sending and looks from here exactly like a quiet room — which is
+     * the one failure a baby monitor must not have.
+     */
     private fun checkStillThere() {
         if (!session.isBusy || _silent.value) {
             return
@@ -865,6 +879,11 @@ class CallCenter private constructor(private val context: Context) {
         dispatch(CallEvent.Failure("The room stopped answering."))
     }
 
+    /**
+     * The alarm is raised here rather than on the phone in the room, because everything that
+     * decides it belongs to this end: the threshold somebody chose, whether the sound is off, and
+     * whether anybody is looking.
+     */
     private fun considerAlarm(level: Float) {
         val (next, fire) = watch.on(level, System.currentTimeMillis())
         watch = next
@@ -985,14 +1004,14 @@ class CallCenter private constructor(private val context: Context) {
     }
 
     companion object {
+        private const val Tag = "CallCenter"
+
         /**
          * Said again on a slow beat, whether or not anything changed. A battery that has not moved
          * produces no news, so without this a single message going astray leaves the other phone
          * with nothing for hours — and a beat that keeps coming is also how that phone will one
          * day notice this one has gone quiet.
          */
-        private const val Tag = "CallCenter"
-
         private const val StatusInterval = 30_000L
 
         /** Noise arrives five times a second, so this much quiet is not a hiccup. */

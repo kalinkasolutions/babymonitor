@@ -33,9 +33,12 @@ class LocalSession(context: Context) {
         get() = prefs.getString(DeviceId, null) ?: UUID.randomUUID().toString()
             .also { prefs.edit { putString(DeviceId, it) } }
 
-    var name: String
+    /**
+     * What this phone calls itself, and what the other one lists it as. Whatever the handset says
+     * it is: with no account there is nothing to rename it from, so nothing here writes it.
+     */
+    val name: String
         get() = prefs.getString(Name, null) ?: DeviceIdentity.defaultName()
-        set(value) = prefs.edit { putString(Name, value.trim()) }
 
     /** The phones this one has scanned, as the rest of the app already expects to see them. */
     fun peers(): List<DeviceDto> = stored().map {

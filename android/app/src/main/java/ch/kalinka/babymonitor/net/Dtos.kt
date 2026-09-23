@@ -105,9 +105,6 @@ data class DeviceDto(
 data class RegisterDeviceRequest(val name: String, val publicKey: String)
 
 @Serializable
-data class RenameDeviceRequest(val name: String)
-
-@Serializable
 data class HeartbeatRequest(val batteryPercent: Int? = null, val isCharging: Boolean? = null)
 
 @Serializable

@@ -26,9 +26,9 @@ import kotlinx.coroutines.delay
  * only lamp this phone has is its own screen.
  *
  * An activity rather than anything smaller because only an activity can turn a locked phone's
- * screen on and show over the keyguard. It shows nothing but a colour, dismisses on a tap, and in
- * [LightMode.Glance] puts itself out after a few seconds so a look at the room does not become a
- * light left on in it.
+ * screen on and show over the keyguard. It shows nothing but a colour, dismisses on a tap, and
+ * when it was asked for with a number of seconds puts itself out again, so a glance at the room
+ * does not become a light left on in it.
  */
 class LightActivity : ComponentActivity() {
     /** What is on screen now. Held as state so a slider being dragged only updates it. */
@@ -140,8 +140,6 @@ class LightActivity : ComponentActivity() {
                 .putExtra(ExtraMode, mode.name)
                 .putExtra(ExtraBrightness, brightness)
                 .putExtra(ExtraSeconds, seconds)
-
-        fun isShowing(): Boolean = showing != null
 
         /**
          * Retunes the light already on screen. The route that got it there — an alarm, a

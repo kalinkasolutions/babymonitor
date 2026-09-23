@@ -83,12 +83,6 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * The other half of a scan with no server behind it. The phone that scanned says who it is
-     * across the WiFi, and proves it by signing its own identity with the secret that was only
-     * ever on this screen. Without that proof this is just a stranger claiming to be a baby
-     * monitor, which is why it is the only unverified message the app accepts.
-     */
-    /**
      * Hands the other phone this one's key, with the proof that its screen was just read.
      *
      * Kept trying for a while, because mDNS has not necessarily noticed the other phone yet: the
@@ -137,6 +131,12 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
+    /**
+     * The other half of a scan with no server behind it. The phone that scanned says who it is
+     * across the WiFi, and proves it by signing its own identity with the secret that was only
+     * ever on this screen. Without that proof this is just a stranger claiming to be a baby
+     * monitor, which is why it is the only unverified message the app accepts.
+     */
     private fun listenForLocalPairing() {
         viewModelScope.launch {
             calls.pairings.collect { signal ->

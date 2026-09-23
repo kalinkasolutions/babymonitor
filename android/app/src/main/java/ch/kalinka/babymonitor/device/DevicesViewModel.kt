@@ -126,18 +126,6 @@ class DevicesViewModel(application: Application) : AndroidViewModel(application)
         })
     }
 
-    fun rename(deviceId: String, name: String) {
-        whileBusy {
-            when (val result = api.renameDevice(deviceId, name.trim())) {
-                is ApiResult.Ok -> load()
-                is ApiResult.Failure -> {
-                    Log.w(Tag, "Could not rename device $deviceId: ${result.message}")
-                    _error.value = result.message
-                }
-            }
-        }
-    }
-
     /**
      * Someone else's phone is not ours to remove — dropping the link to their account is what
      * takes it out of the list, and it takes their other phones with it.

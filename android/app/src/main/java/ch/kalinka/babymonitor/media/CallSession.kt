@@ -141,16 +141,16 @@ data class CallSession(
      */
     val quality: CaptureQuality = CaptureQuality.Standard,
 
-    /**
-     * Candidates that arrived before the description they belong to. WebRTC rejects those, and
-     * they arrive early routinely, so they wait here rather than being dropped.
-     */
     /** What the other phone's screen is doing, so a slider can show it and a switch can restore it. */
     val light: LightState = LightState(),
 
     /** Whether the camera is running. Asked for at the start and changed at any point after. */
     val video: Boolean = false,
 
+    /**
+     * Candidates that arrived before the description they belong to. WebRTC rejects those, and
+     * they arrive early routinely, so they wait here rather than being dropped.
+     */
     val pendingCandidates: List<IceCandidateDto> = emptyList(),
     val remoteDescriptionSet: Boolean = false
 ) {
