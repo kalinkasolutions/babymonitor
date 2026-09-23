@@ -1,0 +1,97 @@
+# Runs both test suites on every push and every pull request.
+#
+# The two release workflows beside this one only fire when a release is published, which is the
+# worst moment to find out a test went red: the tests would already have been failing for however
+# many commits, and the thing being blocked is a version people are waiting to install. This runs
+# them while the change is still small enough to remember.
+#
+# Two jobs rather than one, so a red tick names which half broke and the slower of the two does
+# not wait on the other. Neither needs a secret — nothing here signs, publishes or deploys.
+name: Tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+  # So a suite can be re-run against an unchanged commit, which is how a flake is told from a
+  # failure.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per branch: a push landing on top of a push makes the older run pointless, and the
+# release workflows are not affected because they key on a different ref.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # The wrapper is a jar this job runs. No signing key is in reach here, unlike the release
+      # workflow, but a pull request can change that jar and this is where it would first execute.
+      - name: Validate the Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The debug variant, which is the one a developer runs. The release workflow tests the
+      # release variant before it signs, so between them both variants are covered.
+      #
+      # SignallingIntegrationTest skips itself when there is no backend to talk to, so this stays
+      # green without one running here.
+      - name: Run the Android tests
+        working-directory: android
+        run: ./gradlew testDebugUnitTest
+
+      # Gradle's own HTML report, for when a failure needs more than the log line.
+      - name: Keep the test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-report
+          path: android/app/build/reports/tests/
+          retention-days: 7
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        working-directory: backend
+        run: dotnet restore
+
+      # Warnings as errors, because the analyzers in Directory.Build.props are the reason they are
+      # there: a rule nobody has to act on is a rule that goes on being ignored.
+      - name: Build
+        working-directory: backend
+        run: dotnet build --no-restore --configuration Release -warnaserror
+
+      # Babymonitor.Tests boots the real app against a temporary SQLite file, so this needs no
+      # database service alongside it.
+      - name: Run the backend tests
+        working-directory: backend
+        run: dotnet test --no-build --configuration Release --verbosity normal

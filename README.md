@@ -1,5 +1,7 @@
 # Babymonitor
 
+[![Tests](https://github.com/kalinkasolutions/babymonitor/actions/workflows/tests.yml/badge.svg)](../../actions/workflows/tests.yml)
+
 Two Android phones: one in the room with the baby, one with you. Audio and video go directly
 between them, encrypted end to end; the server only introduces them to each other. See
 [PLAN.md](PLAN.md) for the design and [FEATURES.md](FEATURES.md) for what is built.
@@ -235,6 +237,11 @@ cd android
 ./gradlew testDebugUnitTest               # JVM tests
 ```
 
+Both suites also run on every push and pull request
+([tests.yml](.github/workflows/tests.yml)), which is the badge at the top of this file. The two
+release workflows fire only when a release is published, so without this a suite could go red and
+stay red until somebody tried to ship.
+
 `Babymonitor.Tests` boots the real app with `WebApplicationFactory` against a temporary SQLite file
 rather than an in-memory provider, because most of what it is there to catch — a foreign key that
 refuses a delete, a pairing code two callers both redeem — only exists once the database is real.
@@ -243,7 +250,7 @@ It runs as `Production`, so the password rules and the seeding are the ones a de
 Passwords must be at least ten characters outside Development, where the minimum drops to four
 so the seed accounts below still work. The rule lives in Identity's options rather than on the
 DTOs for exactly that reason; the app's own check is in
-[PasswordRules.kt](android/app/src/main/java/ch/lqy/babymonitor/ui/PasswordRules.kt) and has to be
+[PasswordRules.kt](android/app/src/main/java/ch/kalinka/babymonitor/ui/PasswordRules.kt) and has to be
 kept in step by hand.
 
 In Development the accounts in `SeedUsers` are created at startup, with known passwords and the
