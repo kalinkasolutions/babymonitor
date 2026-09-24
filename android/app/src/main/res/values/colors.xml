@@ -37,4 +37,6 @@
   <color name="md_surface_container_dark">#201D22</color>
   <color name="md_outline_dark">#958E9A</color>
   <color name="md_outline_variant_dark">#4A444D</color>
+
+  <color name="ic_launcher_background">#341442</color>
 </resources>
