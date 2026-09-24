@@ -161,6 +161,7 @@ Then, on both phones:
    other. One scan confirms both.
 3. On the phone that stays in the room: **Monitor → Leave this phone in the room**, and allow
    "display over other apps" when it asks — that is what lets it light the room while locked.
+   If Android answers "App was denied access", see [the fix](#when-something-is-wrong) below.
 4. From the other phone: **Listen** or **Watch**.
 
 ---
@@ -215,6 +216,7 @@ Then turn on **Settings → Always use the relay** in the app and watch the icon
 | "Too many attempts" on a normal sign-in | a household shares one address; raise `RATE_LIMIT_CREDENTIALS` |
 | "Not reachable" next to a phone | that phone has no connection to the server; open the app on it |
 | The room stays dark on video | the phone in the room lacks "display over other apps" |
+| "App was denied access" when allowing "display over other apps" | Android restricts that permission for an APK installed from a browser or file manager. Settings → Apps → Babymonitor → ⋮ → **Allow restricted settings**, then turn it on again. The ⋮ entry appears only after the first refusal, and not at all with Advanced Protection on |
 
 coturn reads its certificate once at startup, so give the renewal a hook:
 
