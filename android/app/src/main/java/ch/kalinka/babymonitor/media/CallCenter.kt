@@ -15,6 +15,7 @@ import ch.kalinka.babymonitor.net.DeviceEvent
 import ch.kalinka.babymonitor.net.DeviceStream
 import ch.kalinka.babymonitor.net.IceCandidateDto
 import ch.kalinka.babymonitor.net.IceServersDto
+import ch.kalinka.babymonitor.net.needsIceRenewal
 import ch.kalinka.babymonitor.net.LanSignalling
 import ch.kalinka.babymonitor.net.LightMode
 import ch.kalinka.babymonitor.net.LightRequest
@@ -211,6 +212,7 @@ class CallCenter private constructor(private val context: Context) {
         link?.send(json.encodeToString(RoomReport(status = current)))
     }
     private var ice: IceServersDto? = null
+    private var iceRenewal: Job? = null
 
     init {
         load()
@@ -223,6 +225,8 @@ class CallCenter private constructor(private val context: Context) {
     fun reconnect() {
         stream.disconnect()
         onRelay = emptySet()
+        iceRenewal?.cancel()
+        iceRenewal = null
         ice = null
         stream.connect()
         load()
@@ -350,14 +354,27 @@ class CallCenter private constructor(private val context: Context) {
             }
         }
 
-        if (api.isConfigured && ice == null) {
-            scope.launch {
+        if (api.isConfigured && iceRenewal == null) {
+            iceRenewal = keepIceFresh()
+        }
+    }
+
+    // Checked against the wall clock on a beat rather than slept until expiry, because a sleeping
+    // phone does not count down a delay.
+    private fun keepIceFresh() = scope.launch {
+        var complained = false
+        while (true) {
+            if (needsIceRenewal(ice, System.currentTimeMillis())) {
                 when (val result = api.iceServers()) {
                     is ApiResult.Ok -> ice = result.value
-                    // Not fatal: two phones on one WiFi reach each other without it.
-                    is ApiResult.Failure -> _message.value = result.message
+                    // Not fatal: two phones on one WiFi reach each other without it. Said once, not per retry.
+                    is ApiResult.Failure -> if (!complained) {
+                        _message.value = result.message
+                        complained = true
+                    }
                 }
             }
+            delay(IceCheckInterval)
         }
     }
 
@@ -977,6 +994,9 @@ class CallCenter private constructor(private val context: Context) {
 
         /** How often to look around the WiFi for the paired phones. */
         private const val PresenceInterval = 3_000L
+
+        /** Credentials are renewed an hour early, so this only bounds the retries. */
+        private const val IceCheckInterval = 5 * 60 * 1000L
 
         @Volatile
         private var instance: CallCenter? = null
