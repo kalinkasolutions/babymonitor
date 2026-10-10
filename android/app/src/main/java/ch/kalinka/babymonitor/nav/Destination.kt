@@ -3,7 +3,7 @@ package ch.kalinka.babymonitor.nav
 import kotlinx.serialization.Serializable
 
 /**
- * Every place the signed-in app can be. The three [TabDestination] entries are the bottom bar;
+ * Every place the app can be. The three [TabDestination] entries are the bottom bar;
  * everything else is pushed on top of them and hides the bar, because those are focused tasks
  * rather than places you switch between.
  */
@@ -18,10 +18,10 @@ sealed interface Destination {
     data object Settings : Destination, TabDestination
 
     @Serializable
-    data object Account : Destination
+    data object Connect : Destination
 
     @Serializable
-    data object Connect : Destination
+    data object CheckRoom : Destination
 }
 
 /** Marker for the destinations that appear in the bottom bar. */

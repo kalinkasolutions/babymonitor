@@ -3,6 +3,7 @@ package ch.kalinka.babymonitor.media
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import ch.kalinka.babymonitor.net.LightMode
+import ch.kalinka.babymonitor.net.ServerSettings
 
 /**
  * What the monitor screen talks to. Nothing but a way in to [CallCenter], which outlives it —
@@ -10,6 +11,7 @@ import ch.kalinka.babymonitor.net.LightMode
  */
 class MonitorViewModel(application: Application) : AndroidViewModel(application) {
     private val calls = CallCenter.of(application)
+    private val server = ServerSettings(application)
 
     val others = calls.others
     val online = calls.online
@@ -24,6 +26,7 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     fun toggleMute() = calls.toggleMute()
     fun showVideo(on: Boolean) = calls.showVideo(on)
     fun setStartWithVideoOff(value: Boolean) = calls.setStartWithVideoOff(value)
+    fun setKeepScreenOn(value: Boolean) = calls.setKeepScreenOn(value)
     fun setAlarm(settings: NoiseAlarmSettings) = calls.setAlarm(settings)
 
     /** Told by the screen, so the alarm knows whether anybody is already looking. */
@@ -41,6 +44,7 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     val retrying = calls.retrying
     val path = calls.path
     val startWithVideoOff = calls.startWithVideoOff
+    val keepScreenOn = calls.keepScreenOn
 
     fun askForLight(mode: LightMode, brightness: Float, seconds: Int = 0) =
         calls.askForLight(mode, brightness, seconds)
@@ -50,6 +54,7 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     fun dismissMessage() = calls.dismissMessage()
     fun refresh() = calls.refresh()
 
+    fun hasServer() = server.isConfigured
     fun hasMicrophonePermission() = calls.hasMicrophonePermission()
     fun hasCameraPermission() = calls.hasCameraPermission()
     fun hasNotificationPermission() = calls.hasNotificationPermission()

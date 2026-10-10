@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,28 +37,20 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.kalinka.babymonitor.BuildConfig
 import androidx.compose.runtime.remember
-import ch.kalinka.babymonitor.device.LocalSession
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import ch.kalinka.babymonitor.device.signingKeyId
 import ch.kalinka.babymonitor.media.MonitorViewModel
 import ch.kalinka.babymonitor.media.NoiseAlarmSettings
-import ch.kalinka.babymonitor.ui.WithoutAccountCannot
+import ch.kalinka.babymonitor.net.ServerCheck
+import ch.kalinka.babymonitor.net.ServerViewModel
 
-/**
- * How the app behaves. Who you are lives behind the avatar instead — the split Google's own apps
- * use, and it keeps "change my password" away from "how loud is the alarm".
- */
 @Composable
 fun SettingsScreen(
-    serverUrl: String,
-    onServerUrlChange: (String) -> Unit,
-    onSignedOut: () -> Unit = {},
-    monitor: MonitorViewModel = viewModel()
+    monitor: MonitorViewModel = viewModel(),
+    server: ServerViewModel = viewModel()
 ) {
-    var url by rememberSaveable { mutableStateOf(serverUrl) }
-    val context = LocalContext.current
     val alarm by monitor.alarm.collectAsState()
     val startWithVideoOff by monitor.startWithVideoOff.collectAsState()
-    val local = remember { LocalSession(context) }
 
     Column(
         modifier = Modifier
@@ -98,60 +89,68 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(24.dp))
-        SettingsSection("Account")
-        if (local.enabled) {
-            Text(
-                text = "Running without an account.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            for (limit in WithoutAccountCannot) {
-                Text(
-                    text = "•  $limit",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            TextButton(onClick = { local.enabled = false; onSignedOut() }) {
-                Text("Sign in with an account instead")
-            }
-        } else {
-            Text(
-                text = "Signed in. Your phones can reach each other from anywhere, and people can " +
-                    "be invited by email.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        SettingsSection("Server")
+        ServerSettingsBlock(server)
 
         Spacer(Modifier.height(24.dp))
         SettingsSection("About")
         About()
+    }
+}
 
-        Spacer(Modifier.height(24.dp))
-        SettingsSection("Connection")
+/**
+ * The optional relay. Without it the phones still work, but only on the same WiFi. With it they
+ * can reach each other from anywhere, and a relay carries the call when nothing else gets through.
+ */
+@Composable
+private fun ServerSettingsBlock(server: ServerViewModel) {
+    var url by rememberSaveable { mutableStateOf(server.url) }
+    var key by rememberSaveable { mutableStateOf(server.key) }
+    val check by server.check.collectAsState()
+
+    Text(
+        text = "Optional. Without a server both phones must be on the same WiFi. With one you " +
+            "can listen from anywhere. Pairing copies these settings to the other phone.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = url,
+        onValueChange = { url = it },
+        label = { Text("Server address") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = key,
+        onValueChange = { key = it },
+        label = { Text("Server key") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(12.dp))
+    Button(
+        onClick = { server.save(url, key) },
+        enabled = check != ServerCheck.Checking,
+        modifier = Modifier.fillMaxWidth()
+    ) { Text("Save and check") }
+
+    val (line, isError) = when (val current = check) {
+        ServerCheck.NotChecked -> null to false
+        ServerCheck.Checking -> "Checking…" to false
+        ServerCheck.Works -> "The server answers and accepts the key." to false
+        is ServerCheck.Fails -> current.reason to true
+    }
+    line?.let {
+        Spacer(Modifier.height(8.dp))
         Text(
-            text = "Where the backend lives. Only needed for pairing and for listening from " +
-                "outside the house — on the same WiFi the phones talk directly.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            text = it,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            label = { Text("Server address") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(12.dp))
-        Button(
-            onClick = { onServerUrlChange(url) },
-            enabled = url.isNotBlank() && url != serverUrl,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Save") }
-        Pending("LAN only — never connect through the server")
-
     }
 }
 
@@ -163,17 +162,6 @@ private fun SettingsSection(title: String) {
         color = MaterialTheme.colorScheme.primary
     )
     Spacer(Modifier.height(8.dp))
-}
-
-/** A setting that is designed but not built yet, shown so the shape of the screen is honest. */
-@Composable
-private fun Pending(label: String) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(vertical = 6.dp)
-    )
 }
 
 /**

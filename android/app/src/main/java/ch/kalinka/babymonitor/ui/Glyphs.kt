@@ -88,6 +88,33 @@ fun DrawScope.drawCamera(on: Boolean, tint: Color = Color.White) {
     }
 }
 
+/** Four corners pointing out to go full screen, or in to come back. */
+fun DrawScope.drawFullscreen(exit: Boolean, tint: Color = Color.White) {
+    val stroke = size.height / 9f
+    val arm = size.width * 0.3f
+    val inset = stroke / 2
+
+    // Each corner with the direction pointing into the square.
+    val corners = listOf(
+        Offset(inset, inset) to Offset(1f, 1f),
+        Offset(size.width - inset, inset) to Offset(-1f, 1f),
+        Offset(inset, size.height - inset) to Offset(1f, -1f),
+        Offset(size.width - inset, size.height - inset) to Offset(-1f, -1f)
+    )
+
+    for ((corner, inward) in corners) {
+        // Coming back out of full screen, the corner sits one arm in and its arms point outwards.
+        val tip = if (exit) Offset(corner.x + inward.x * arm, corner.y + inward.y * arm) else corner
+        val out = if (exit) -1f else 1f
+        val path = Path().apply {
+            moveTo(tip.x + inward.x * arm * out, tip.y)
+            lineTo(tip.x, tip.y)
+            lineTo(tip.x, tip.y + inward.y * arm * out)
+        }
+        drawPath(path = path, color = tint, style = Stroke(width = stroke))
+    }
+}
+
 /**
  * How the two phones are reaching each other, drawn as the shape of the route itself: two ends
  * joined directly, or joined through something in the middle. The relay is the one worth

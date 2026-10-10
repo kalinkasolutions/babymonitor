@@ -1,17 +1,15 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 
 namespace Babymonitor.Tests;
 
 /// <summary>
-/// The relay credential. coturn recomputes the same HMAC from the same shared secret and compares,
-/// so this is one of the few things in the app where the two sides must agree byte for byte and
-/// nothing in the codebase would notice if they stopped: a wrong signature is not an error, it is
-/// a relay that quietly refuses every call made from a mobile network.
+/// The relay credential. coturn recomputes the same HMAC from the same secret, and a mismatch is
+/// not an error anywhere: it is a relay that quietly refuses every call from mobile data.
 /// </summary>
 public sealed class TurnCredentialTests
 {
@@ -32,49 +30,41 @@ public sealed class TurnCredentialTests
     public async Task TheCredentialIsTheHmacCoturnWillRecompute()
     {
         using var app = new App(withRelay: true);
-        var phone = await Accounts.RegisterAsync(app, "phone");
+        using var phone = new TestPhone();
 
-        var issued = await Accounts.ReadAsync(await phone.Client.GetAsync("api/turn/credentials"));
+        var issued = await IssueAsync(app, phone);
         var username = issued.GetProperty("username").GetString()!;
-        var credential = issued.GetProperty("credential").GetString()!;
 
-        // Exactly what coturn does with use-auth-secret: HMAC-SHA1 of the username, base64.
+        // What coturn does with use-auth-secret: HMAC-SHA1 of the username, base64.
         using var hmac = new HMACSHA1(Encoding.UTF8.GetBytes(Secret));
         var expected = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(username)));
 
-        Assert.Equal(expected, credential);
+        Assert.Equal(expected, issued.GetProperty("credential").GetString());
     }
 
-    /// <summary>The TURN REST scheme: the username is the expiry and the user, so coturn can reject a stale one alone.</summary>
     [Fact]
-    public async Task TheUsernameCarriesItsOwnExpiry()
+    public async Task TheUsernameIsTheExpiryAndTheDevice()
     {
         using var app = new App(withRelay: true);
-        var phone = await Accounts.RegisterAsync(app, "phone");
+        using var phone = new TestPhone();
 
-        var issued = await Accounts.ReadAsync(await phone.Client.GetAsync("api/turn/credentials"));
-        var username = issued.GetProperty("username").GetString()!;
+        var issued = await IssueAsync(app, phone);
+        var parts = issued.GetProperty("username").GetString()!.Split(':');
 
-        var parts = username.Split(':');
         Assert.Equal(2, parts.Length);
-
-        var expiry = DateTimeOffset.FromUnixTimeSeconds(
-            long.Parse(parts[0], CultureInfo.InvariantCulture));
+        var expiry = DateTimeOffset.FromUnixTimeSeconds(long.Parse(parts[0], CultureInfo.InvariantCulture));
         Assert.True(expiry > DateTimeOffset.UtcNow, "the credential is already expired");
-        Assert.Equal(phone.UserId, Guid.Parse(parts[1]));
+        Assert.Equal(phone.DeviceId, parts[1]);
+        Assert.True(issued.TryGetProperty("expiresAt", out _));
     }
 
-    /// <summary>
-    /// A household on one WiFi never needs a relay, so running without one is a setup rather than
-    /// a misconfiguration. STUN still goes out, because that needs no credential.
-    /// </summary>
     [Fact]
     public async Task WithoutARelayStunIsStillIssuedAndCarriesNoCredential()
     {
         using var app = new App(withRelay: false);
-        var phone = await Accounts.RegisterAsync(app, "phone");
+        using var phone = new TestPhone();
 
-        var issued = await Accounts.ReadAsync(await phone.Client.GetAsync("api/turn/credentials"));
+        var issued = await IssueAsync(app, phone);
 
         Assert.Equal(string.Empty, issued.GetProperty("credential").GetString());
         Assert.All(
@@ -83,13 +73,21 @@ public sealed class TurnCredentialTests
     }
 
     [Fact]
-    public async Task ACredentialNeedsASignedInCaller()
+    public async Task ACredentialNeedsAnAuthenticatedDevice()
     {
         using var app = new App(withRelay: true);
-        using var anonymous = app.CreateSignedOutClient();
+        using var anonymous = app.CreateClient();
 
-        var response = await anonymous.GetAsync("api/turn/credentials");
+        using var response = await anonymous.GetAsync("api/turn/credentials");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    private static async Task<JsonElement> IssueAsync(BabymonitorApp app, TestPhone phone)
+    {
+        using var client = app.CreateClientFor(phone);
+        using var response = await client.GetAsync("api/turn/credentials");
+        response.EnsureSuccessStatusCode();
+        return JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
     }
 }

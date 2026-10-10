@@ -6,12 +6,11 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
-import ch.kalinka.babymonitor.device.LocalSession
-import ch.kalinka.babymonitor.device.VerifiedKeys
+import ch.kalinka.babymonitor.device.Household
+import ch.kalinka.babymonitor.device.Phone
 import ch.kalinka.babymonitor.net.ApiClient
 import ch.kalinka.babymonitor.net.ApiResult
 import ch.kalinka.babymonitor.net.CallRequest
-import ch.kalinka.babymonitor.net.DeviceDto
 import ch.kalinka.babymonitor.net.DeviceEvent
 import ch.kalinka.babymonitor.net.DeviceStream
 import ch.kalinka.babymonitor.net.IceCandidateDto
@@ -33,7 +32,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -65,19 +63,18 @@ class CallCenter private constructor(private val context: Context) {
      */
     private val lan = LanSignalling(
         context = context,
-        thisDeviceId = ::thisDeviceId,
-        confirmedKeyFor = { deviceId -> verifiedKeys.pinned(deviceId) },
+        thisDeviceId = { household.deviceId },
+        confirmedKeyFor = { deviceId -> household.keyOf(deviceId) },
         onSignal = { signal -> scope.launch { onSignal(signal) } },
         onUnverified = { signal -> scope.launch { _pairings.emit(signal) } }
     )
 
     private val _pairings = MutableSharedFlow<SignalMessage>(extraBufferCapacity = 4)
 
-    /** Somebody scanned this phone's code and said so across the WiFi. */
+    /** Somebody scanned this phone's code and said so, across the WiFi or through the relay. */
     val pairings: SharedFlow<SignalMessage> = _pairings.asSharedFlow()
-    private val verifiedKeys = VerifiedKeys(context)
+    private val household = Household(context)
     private val replay = SignalReplayGuard()
-    private val local = LocalSession(context)
     private val alarmSettings = AlarmSettings(context)
     private val callPreferences = CallPreferences(context)
     private var watch = NoiseWatch(alarmSettings.current)
@@ -90,15 +87,14 @@ class CallCenter private constructor(private val context: Context) {
 
     private val _online = MutableStateFlow<Set<String>>(emptySet())
 
-    /**
-     * The phones holding a connection right now. Kept beside the list rather than inside it: a
-     * device row is a registration and this is whether anybody is home, and the two arrive from
-     * different places and at different times.
-     */
+    /** The paired phones that can answer right now, on the WiFi or through the relay. */
     val online: StateFlow<Set<String>> = _online.asStateFlow()
 
-    private val _others = MutableStateFlow<List<DeviceDto>>(emptyList())
-    val others: StateFlow<List<DeviceDto>> = _others.asStateFlow()
+    /** What the relay last said about who is connected to it. */
+    private var onRelay: Set<String> = emptySet()
+
+    private val _others = MutableStateFlow<List<Phone>>(emptyList())
+    val others: StateFlow<List<Phone>> = _others.asStateFlow()
 
     private val _state = MutableStateFlow<CallState>(CallState.Idle)
     val state: StateFlow<CallState> = _state.asStateFlow()
@@ -125,6 +121,9 @@ class CallCenter private constructor(private val context: Context) {
 
     /** Whether Listen starts without the camera. */
     val startWithVideoOff: StateFlow<Boolean> = _startWithVideoOff.asStateFlow()
+
+    private val _keepScreenOn = MutableStateFlow(callPreferences.keepScreenOn)
+    val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
     private val _retrying = MutableStateFlow(false)
 
@@ -180,7 +179,7 @@ class CallCenter private constructor(private val context: Context) {
     private var dropped: Job? = null
     private var answering: Job? = null
     private var pathWatch: Job? = null
-    private var localWatch: Job? = null
+    private var presenceWatch: Job? = null
 
     /** What this phone asked for, so it can ask again. Cleared only when somebody says stop. */
     private var wanted: Pair<String, Boolean>? = null
@@ -215,28 +214,26 @@ class CallCenter private constructor(private val context: Context) {
 
     init {
         load()
-        if (!local.enabled) {
-            listen()
-        }
+        listen()
     }
 
     fun refresh() = load()
 
-    /** Hands a message straight to a phone on this network, for pairing before there is trust. */
-    suspend fun sendLocally(message: SignalMessage): Boolean {
-        // Signed like everything else, so nothing leaves this phone unsigned. The phone at the
-        // other end cannot check it yet — it has no key for this one, which is the point of
-        // pairing — and lets this one message through on the strength of the proof inside it
-        // instead. Signing it now means it verifies like any other the moment the key is pinned.
-        val signed = withContext(Dispatchers.Default) {
-            message.signed(fromDeviceId = thisDeviceId().orEmpty())
-        } ?: return false
-
-        return lan.send(signed)
+    /** The relay address or key changed: drop the old connection and use the new one. */
+    fun reconnect() {
+        stream.disconnect()
+        onRelay = emptySet()
+        ice = null
+        stream.connect()
+        load()
     }
 
-    /** Whether that phone is on this network, whatever the server thinks. */
-    fun onThisNetwork(deviceId: String): Boolean = lan.reachable(deviceId)
+    /**
+     * Hands the pairing message to the phone that was just scanned. It cannot check the signature
+     * yet, having no key for this phone; it trusts the proof inside instead.
+     */
+    suspend fun sendPairing(message: SignalMessage): Boolean =
+        send(message.toDeviceId, message.kind, message.body) == SignalResult.Delivered
 
     fun listenTo(deviceId: String, video: Boolean = false) {
         // Whatever went wrong last time is not news about this attempt.
@@ -266,10 +263,7 @@ class CallCenter private constructor(private val context: Context) {
      * Both halves matter: never confirmed means nobody has checked the key, and confirmed but
      * changed means the phone reinstalled — or something is standing in for it.
      */
-    private fun isConfirmed(deviceId: String): Boolean {
-        val peer = _others.value.firstOrNull { it.id == deviceId } ?: return false
-        return verifiedKeys.pinned(deviceId) == peer.publicKey
-    }
+    private fun isConfirmed(deviceId: String): Boolean = household.keyOf(deviceId) != null
 
     /** Stopping on purpose is the one ending that is not news, and the one that stops the retrying. */
     fun hangUp() {
@@ -338,50 +332,40 @@ class CallCenter private constructor(private val context: Context) {
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     private fun load() {
-        // Here rather than once at startup, because this phone has no id to announce until it has
-        // registered — and if that failed, the session would otherwise run to its end with no path
-        // across the WiFi and nothing to say so. A no-op once a socket is already listening.
+        // A no-op once the socket is already listening.
         lan.start()
+        _others.value = household.peers()
+        stream.watch(_others.value.map { it.id })
 
-        // With no account there is no list to fetch: the phones this one has scanned are the
-        // phones there are, and whether they can answer is a question for the WiFi.
-        if (local.enabled) {
-            _others.value = local.peers()
-
-            // One watcher, however often this is called: it re-reads the paired phones as well as
-            // who is answering, so a phone paired a moment ago turns up without a restart.
-            if (localWatch == null) {
-                localWatch = scope.launch {
-                    while (true) {
-                        _others.value = local.peers()
-                        _online.value = _others.value
-                            .filter { lan.reachable(it.id) }
-                            .map { it.id }
-                            .toSet()
-
-                        delay(PresenceInterval)
-                    }
+        // One watcher, however often this is called. It re-reads the paired phones too, so one
+        // paired a moment ago turns up without a restart.
+        if (presenceWatch == null) {
+            presenceWatch = scope.launch {
+                while (true) {
+                    _others.value = household.peers()
+                    stream.watch(_others.value.map { it.id })
+                    updateOnline()
+                    delay(PresenceInterval)
                 }
             }
-
-            return
         }
 
-        scope.launch {
-            when (val result = api.devices()) {
-                is ApiResult.Ok -> {
-                    _others.value = result.value.filterNot { it.id == api.deviceId }
-                    _online.value = result.value.filter { it.isOnline }.map { it.id }.toSet()
+        if (api.isConfigured && ice == null) {
+            scope.launch {
+                when (val result = api.iceServers()) {
+                    is ApiResult.Ok -> ice = result.value
+                    // Not fatal: two phones on one WiFi reach each other without it.
+                    is ApiResult.Failure -> _message.value = result.message
                 }
-                is ApiResult.Failure -> _message.value = result.message
-            }
-
-            when (val result = api.iceServers()) {
-                is ApiResult.Ok -> ice = result.value
-                // Not fatal: two phones on one WiFi reach each other on host candidates alone.
-                is ApiResult.Failure -> _message.value = result.message
             }
         }
+    }
+
+    private fun updateOnline() {
+        _online.value = _others.value
+            .filter { lan.reachable(it.id) || it.id in onRelay }
+            .map { it.id }
+            .toSet()
     }
 
     private fun listen() {
@@ -391,23 +375,17 @@ class CallCenter private constructor(private val context: Context) {
                 when (event) {
                     is DeviceEvent.Signal -> onSignalFromServer(event.signal)
 
-                is DeviceEvent.Presence -> {
-                    _online.value = if (event.online) {
-                        _online.value + event.deviceId
-                    } else {
-                        _online.value - event.deviceId
-                    }
+                    is DeviceEvent.Presence -> {
+                        onRelay = if (event.online) onRelay + event.deviceId else onRelay - event.deviceId
+                        updateOnline()
 
-                    // The phone we are waiting for has just reappeared. No reason to sit out the
-                    // rest of a backoff that was only ever a guess at when it might come back.
-                    if (event.online && event.deviceId == wanted?.first && _retrying.value) {
-                        Log.i(Tag, "The room is back; calling it now")
-                        attempts = 0
-                        scheduleRedial(now = true)
+                        // The phone we are waiting for is back: no reason to sit out the backoff.
+                        if (event.online && event.deviceId == wanted?.first && _retrying.value) {
+                            Log.i(Tag, "The room is back; calling it now")
+                            attempts = 0
+                            scheduleRedial(now = true)
+                        }
                     }
-                }
-                    is DeviceEvent.LinksChanged, is DeviceEvent.Changed, is DeviceEvent.Removed -> load()
-                    else -> Unit
                 }
             }
         }
@@ -421,12 +399,15 @@ class CallCenter private constructor(private val context: Context) {
      * Anything that fails is dropped rather than acted on, because the alternative is a call to
      * something that is not the phone in the nursery.
      */
-    private fun onSignalFromServer(signal: SignalMessage) {
+    private suspend fun onSignalFromServer(signal: SignalMessage) {
         val peer = _others.value.firstOrNull { it.id == signal.fromDeviceId }
-        val confirmed = verifiedKeys.pinned(signal.fromDeviceId)
+        val confirmed = household.keyOf(signal.fromDeviceId)
 
         when (val trust = signal.trust(confirmed)) {
             SignalTrust.Verified -> onSignal(signal)
+
+            // The one message a stranger may send: it carries proof it read this phone's screen.
+            SignalTrust.Unconfirmed if signal.kind == SignalKinds.Pair -> _pairings.emit(signal)
 
             SignalTrust.Unconfirmed -> {
                 Log.w(Tag, "Dropped a ${signal.kind} from ${signal.fromDeviceId}: its key was never confirmed")
@@ -459,9 +440,6 @@ class CallCenter private constructor(private val context: Context) {
             _message.value = notice
         }
     }
-
-    /** This phone's id on whichever footing it is running: an account, or nothing but the WiFi. */
-    private fun thisDeviceId(): String? = if (local.enabled) local.deviceId else api.deviceId
 
     private fun onSignal(signal: SignalMessage) {
         // Both paths arrive here, so this is the one place a message that has already been acted
@@ -523,14 +501,15 @@ class CallCenter private constructor(private val context: Context) {
                 signal.body.takeIf { it.isNotBlank() }?.let { _message.value = it }
                 dispatch(CallEvent.Stopped(from))
             }
+
+            // Pairing again with a phone that is already paired: still worth showing on screen.
+            SignalKinds.Pair -> _pairings.tryEmit(signal)
         }
     }
 
     /**
-     * Whether to open the microphone for the phone that asked. Two conditions, both of them the
-     * point: this phone has been given permission to record at all, and the key of the phone
-     * asking was confirmed in person. A link only means the two accounts can see each other, and
-     * that is not enough to turn a nursery into a microphone.
+     * Whether to open the microphone for the phone that asked: this phone may record at all, and
+     * the phone asking was paired in person.
      */
     private fun mayBeHeardBy(deviceId: String, video: Boolean): Boolean {
         if (!hasMicrophonePermission()) {
@@ -543,8 +522,7 @@ class CallCenter private constructor(private val context: Context) {
             return false
         }
 
-        val peer = _others.value.firstOrNull { it.id == deviceId }
-        val confirmed = peer != null && verifiedKeys.pinned(peer.id) == peer.publicKey
+        val confirmed = isConfirmed(deviceId)
         if (!confirmed) {
             _message.value = "Refused a phone whose key this one has not confirmed."
         }
@@ -673,36 +651,7 @@ class CallCenter private constructor(private val context: Context) {
                 }
             }
 
-            is CallEffect.Send -> {
-                // Signed once, then carried by whichever path works. An offer names the
-                // fingerprint the media will be encrypted to, so this signature is what stops
-                // anything in the middle — the backend included — substituting one of its own.
-                // Off the main thread, because signing goes to the keystore.
-                val signed = withContext(Dispatchers.Default) {
-                    SignalMessage(
-                        toDeviceId = effect.toDeviceId,
-                        kind = effect.kind,
-                        body = effect.body
-                    ).signed(fromDeviceId = thisDeviceId().orEmpty())
-                }
-
-                if (signed == null) {
-                    Log.e(Tag, "Could not sign a ${effect.kind}; this phone cannot prove who it is")
-                    report(effect, SignalResult.Refused("This phone could not sign for itself."))
-                    return
-                }
-
-                // The WiFi first, the server second. Nothing is lost by trying: a phone that is
-                // not on this network, or whose key was never confirmed, simply says no and the
-                // hub carries it as before.
-                val result = if (lan.send(signed)) {
-                    SignalResult.Delivered
-                } else {
-                    stream.sendSignal(signed)
-                }
-
-                report(effect, result)
-            }
+            is CallEffect.Send -> report(effect, send(effect.toDeviceId, effect.kind, effect.body))
 
             CallEffect.Close -> {
                 pathWatch?.cancel()
@@ -728,6 +677,26 @@ class CallCenter private constructor(private val context: Context) {
     }
 
     /**
+     * Signs a message once and hands it to whichever path works: the WiFi first, then the relay.
+     * An offer names the fingerprint the media will be encrypted to, so the signature is what
+     * stops anything in the middle, the relay included, from swapping in its own.
+     */
+    private suspend fun send(toDeviceId: String, kind: String, body: String): SignalResult {
+        // Off the main thread, because signing goes to the keystore.
+        val signed = withContext(Dispatchers.Default) {
+            SignalMessage(toDeviceId = toDeviceId, kind = kind, body = body)
+                .signed(fromDeviceId = household.deviceId)
+        }
+
+        if (signed == null) {
+            Log.e(Tag, "Could not sign a $kind; this phone cannot prove who it is")
+            return SignalResult.Refused("This phone could not sign for itself.")
+        }
+
+        return if (lan.send(signed)) SignalResult.Delivered else stream.sendSignal(signed)
+    }
+
+    /**
      * What to say about a signal that did not arrive. Only the asking is worth reporting when the
      * other phone is simply not there — the messages after it follow a phone that has already
      * answered, and one lost candidate is not news anybody can act on. A refusal or this phone
@@ -743,15 +712,14 @@ class CallCenter private constructor(private val context: Context) {
                 dispatch(CallEvent.Stopped(effect.toDeviceId))
             }
 
-            // With no account the WiFi was the only path there ever was, and falling through to
-            // the hub only reports the absence of a server nobody asked for. What actually went
-            // wrong is the other phone not being on this network, which is the thing to say.
+            // Without a relay the WiFi is the only path, so that is the thing to say.
             SignalResult.Offline -> {
-                val reason = if (local.enabled) {
+                val reason = if (api.isConfigured) {
+                    "${nameOf(effect.toDeviceId)} is not on this WiFi, and this phone cannot " +
+                        "reach the server."
+                } else {
                     "${nameOf(effect.toDeviceId)} is not on this WiFi. Both phones need the app " +
                         "open on the same network."
-                } else {
-                    "This phone has no connection to the server."
                 }
 
                 _message.value = reason
@@ -773,16 +741,14 @@ class CallCenter private constructor(private val context: Context) {
     private fun reportUnlitRoom() {
         val peer = session.peerDeviceId ?: return
         scope.launch {
-            stream.sendSignal(
-                SignalMessage(
-                    toDeviceId = peer,
-                    kind = SignalKinds.Light,
-                    body = json.encodeToString(
-                        LightRequest(
-                            mode = LightMode.Off.name,
-                            reason = "That phone is not allowed to show a screen while it is " +
-                                "locked. On it: allow \"display over other apps\"."
-                        )
+            send(
+                toDeviceId = peer,
+                kind = SignalKinds.Light,
+                body = json.encodeToString(
+                    LightRequest(
+                        mode = LightMode.Off.name,
+                        reason = "That phone is not allowed to show a screen while it is " +
+                            "locked. On it: allow \"display over other apps\"."
                     )
                 )
             )
@@ -810,6 +776,11 @@ class CallCenter private constructor(private val context: Context) {
     fun setStartWithVideoOff(value: Boolean) {
         callPreferences.startWithVideoOff = value
         _startWithVideoOff.value = value
+    }
+
+    fun setKeepScreenOn(value: Boolean) {
+        callPreferences.keepScreenOn = value
+        _keepScreenOn.value = value
     }
 
     /**
@@ -979,30 +950,6 @@ class CallCenter private constructor(private val context: Context) {
         }
     }
 
-    /**
-     * Ends everything this session was doing. Held against the application so a call survives the
-     * screen it was started from — which also means nothing about it goes away on its own when
-     * the session it belonged to does.
-     */
-    private fun close() {
-        statusTicker?.cancel()
-        watchdog?.cancel()
-        redial?.cancel()
-        dropped?.cancel()
-        answering?.cancel()
-        pathWatch?.cancel()
-        localWatch?.cancel()
-
-        status.stop()
-        link?.close()
-        link = null
-        lan.stop()
-        stream.disconnect()
-        MonitorService.silenceAlarm(context)
-        MonitorService.disarm(context)
-        scope.cancel()
-    }
-
     companion object {
         private const val Tag = "CallCenter"
 
@@ -1028,7 +975,7 @@ class CallCenter private constructor(private val context: Context) {
         private const val AnswerLimit = 15_000L
         private const val PathInterval = 5_000L
 
-        /** How often a serverless phone looks around the network for the other one. */
+        /** How often to look around the WiFi for the paired phones. */
         private const val PresenceInterval = 3_000L
 
         @Volatile
@@ -1040,16 +987,5 @@ class CallCenter private constructor(private val context: Context) {
                 instance ?: CallCenter(context.applicationContext).also { instance = it }
             }
 
-        /**
-         * Forgets the session: signing out, signing in, or starting to use the app without an
-         * account. Everything here belongs to one of those — which phones exist, which server
-         * they came from, whether there is a server at all — and none of it survives the change.
-         */
-        fun reset() {
-            synchronized(this) {
-                instance?.close()
-                instance = null
-            }
-        }
     }
 }

@@ -3,7 +3,9 @@
 [![Tests](https://github.com/kalinkasolutions/babymonitor/actions/workflows/tests.yml/badge.svg)](../../actions/workflows/tests.yml)
 
 Two Android phones: one in the room with the baby, one with you. Audio and video go directly
-between them, encrypted end to end; the server only introduces them to each other. See
+between them, encrypted end to end. On the same WiFi that is all you need. A small server is
+optional: it passes messages between the phones when they are on different networks, and relays
+the call when nothing else gets through. See
 [PLAN.md](PLAN.md) for the design and [FEATURES.md](FEATURES.md) for what is built.
 
 ## Contents
@@ -18,6 +20,12 @@ between them, encrypted end to end; the server only introduces them to each othe
 ---
 
 ## Install the server
+
+**Optional.** Without a server, both phones must be on the same WiFi. With one, you can listen
+from anywhere.
+
+The server keeps no accounts and no database. Phones prove who they are with the key they already
+have, and a shared server key decides who may use it at all.
 
 Two containers, one compose file: the .NET app and coturn. **No certificate goes on the Docker
 host** — nginx already has one.
@@ -64,14 +72,13 @@ cp .env.example .env
 
 | | |
 |---|---|
+| `SERVER_KEY` | `openssl rand -base64 24` — you type this into the app once |
 | `PROXY_TRUST_ANY` | `true`, unless nginx is on another machine — see below |
 | `APP_BIND_ADDRESS` | `127.0.0.1`, unless nginx is on another machine |
 | `TURN_SECRET` | `openssl rand -base64 32` |
 | `TURN_HOST` | `turn.example.com` |
 | `TURNS_HOST` | `baby.example.com` |
 | `TURN_LISTENING_IP` | the Docker host's own address — must be its real one, not `0.0.0.0` |
-| `EMAIL_*` | your SMTP server |
-| `EMAIL_BASE_URL` | `https://baby.example.com` |
 
 Behind NAT, also uncomment `external-ip=<public>/<private>` in
 [deploy/turn/turnserver.conf](deploy/turn/turnserver.conf).
@@ -112,8 +119,6 @@ machine arrives as itself. `docker logs babymonitor | grep -i proxy` says what w
 docker compose up -d
 ```
 
-Keep `./data` — it holds the database and the key ring that keeps phones signed in.
-
 The image comes from Docker Hub, built by
 [the release workflow](.github/workflows/docker-publish.yml) when a release is published. To build
 it yourself: `docker build -t kalinkasolutions/babymonitor:latest .`
@@ -121,7 +126,7 @@ it yourself: `docker build -t kalinkasolutions/babymonitor:latest .`
 ### 6. Check
 
 ```bash
-curl https://baby.example.com/api/auth/status       # {"authenticated":false,...}
+curl https://baby.example.com/api/status            # {"ok":true}
 nc -zvu turn.example.com 3478                       # from outside the network
 docker logs babymonitor-turn | grep -i error          # quiet
 ```
@@ -149,20 +154,22 @@ cd android
 ./gradlew installDebug         # to every connected device
 ```
 
-**Or skip the server entirely.** On the sign-in screen, *Use it without an account*: the phones
-pair by scanning, find each other over mDNS, and nothing leaves the house. You lose what a server
-is for — inviting a babysitter by email, listening from outside the house, getting back in when a
-phone is lost — and keep the monitor.
-
 Then, on both phones:
 
-1. Open the app, set the server address, sign in.
-2. Pair them: **Devices → Connect another phone**, show the code on one and scan it with the
-   other. One scan confirms both.
-3. On the phone that stays in the room: **Monitor → Leave this phone in the room**, and allow
-   "display over other apps" when it asks — that is what lets it light the room while locked.
-   If Android answers "App was denied access", see [the fix](#when-something-is-wrong) below.
-4. From the other phone: **Listen** or **Watch**.
+1. Open the app. There is nothing to sign in to.
+2. If you run a server: on one phone, **Settings → Server**, enter the address and the server
+   key, and press **Save and check**. The other phone gets them when you pair.
+3. Pair them: **Devices → Connect another phone**, show the code on one and scan it with the
+   other. One scan confirms both. Without a server, both phones must be on the same WiFi for this.
+4. On the phone that stays in the room: **Monitor → Check the picture** to find a good spot, then
+   **Use this phone as the monitor**. Allow "display over other apps" when it asks — that is what
+   lets it light the room while locked. If Android answers "App was denied access", see
+   [the fix](#when-something-is-wrong) below.
+5. From the other phone: **Listen** or **Watch**. While watching, the corner button makes the
+   picture full screen, and **Keep this screen on** stops the phone from locking.
+
+Pairing an older version of the app does not work: the pairing code changed. Update both phones
+and pair again.
 
 ---
 
@@ -211,9 +218,8 @@ Then turn on **Settings → Always use the relay** in the app and watch the icon
 | Relay never works from outside | the host is behind NAT and `external-ip` is not set, so it advertises an address nobody can reach |
 | `turns:` never connects, `turn:` fine | the certificate is not publicly trusted, or nginx's `stream` block is inside `http { }` |
 | Relay stops working after two months | the certificate renewed and nothing restarted coturn — see the renewal hook below |
-| Everyone signed out after a redeploy | `./data` was not persisted |
+| "The server did not accept the server key" | the key in the app is not `SERVER_KEY` from `.env` |
 | Every log line says the same client address | `PROXY_TRUST_ANY`/`PROXY_TRUSTED` not set, so `X-Forwarded-For` is ignored |
-| "Too many attempts" on a normal sign-in | a household shares one address; raise `RATE_LIMIT_CREDENTIALS` |
 | "Not reachable" next to a phone | that phone has no connection to the server; open the app on it |
 | The room stays dark on video | the phone in the room lacks "display over other apps" |
 | "App was denied access" when allowing "display over other apps" | Android restricts that permission for an APK installed from a browser or file manager. Settings → Apps → Babymonitor → ⋮ → **Allow restricted settings**, then turn it on again. The ⋮ entry appears only after the first refusal, and not at all with Advanced Protection on |
@@ -232,8 +238,8 @@ docker restart babymonitor-turn
 
 ```bash
 cd backend
-dotnet run --project Babymonitor.Api        # https://*:5005, schema applied at startup
-dotnet test                               # the backend suite, on a disposable database
+Server__Key=dev dotnet run --project Babymonitor.Api   # https://*:5005
+dotnet test                               # the backend suite
 
 cd android
 ./gradlew testDebugUnitTest               # JVM tests
@@ -244,35 +250,8 @@ Both suites also run on every push and pull request
 release workflows fire only when a release is published, so without this a suite could go red and
 stay red until somebody tried to ship.
 
-`Babymonitor.Tests` boots the real app with `WebApplicationFactory` against a temporary SQLite file
-rather than an in-memory provider, because most of what it is there to catch — a foreign key that
-refuses a delete, a pairing code two callers both redeem — only exists once the database is real.
-It runs as `Production`, so the password rules and the seeding are the ones a deployment gets.
-
-Passwords must be at least ten characters outside Development, where the minimum drops to four
-so the seed accounts below still work. The rule lives in Identity's options rather than on the
-DTOs for exactly that reason; the app's own check is in
-[PasswordRules.kt](android/app/src/main/java/ch/kalinka/babymonitor/ui/PasswordRules.kt) and has to be
-kept in step by hand.
-
-In Development the accounts in `SeedUsers` are created at startup, with known passwords and the
-email already confirmed. An environment check in `Seed.cs` means a stray `SeedUsers` section in
-production cannot create a login.
-
-| email | password | role |
-|---|---|---|
-| `admin@local` | `admin` | Admin |
-| `niggi@local` | `niggi` | User |
-
-With no `Email:SmtpHost` the app still runs: mails are logged and dropped rather than failing what
-triggered them. For local testing point it at a catcher on port 1025. The links in those mails
-land on the API itself, which renders a small page, because there is no web front end.
-
-A migration:
-
-```bash
-dotnet ef migrations add <Name> --project Babymonitor.Dal --startup-project Babymonitor.Api
-```
+`Babymonitor.Tests` boots the real app with `WebApplicationFactory` and talks to it over HTTP
+and SignalR, with test phones that sign in with keys generated on the spot.
 
 ### Cutting a release
 
@@ -387,18 +366,15 @@ None of this is something a parent installing a monitor will do. It is there so 
 
 ### Integration tests
 
-`SignallingIntegrationTest` drives a real backend over the same two connections the app uses, and
-skips itself when there is none, so an ordinary test run stays green. Start a disposable one on
-its own database:
+`SignallingIntegrationTest` drives a real backend over the same connections the app uses, and
+skips itself when there is none, so an ordinary test run stays green. Start one:
 
 ```bash
-ConnectionStrings__Babymonitor="Data Source=/tmp/babymonitor-test.db" \
-DataProtection__KeyPath=/tmp/babymonitor-test-keys \
-ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://127.0.0.1:5199 \
+Server__Key=integration-test-key ASPNETCORE_URLS=http://127.0.0.1:5199 \
 dotnet run --project backend/Babymonitor.Api --no-launch-profile
 ```
 
-Point it elsewhere with `BABYMONITOR_URL`. What it cannot cover is the media: that needs two real
+Point it elsewhere with `BABYMONITOR_URL` and `BABYMONITOR_KEY`. What it cannot cover is the media: that needs two real
 phones.
 
 ### Both phones at once
@@ -411,7 +387,7 @@ adb connect <phone-ip>:5555
 ./gradlew installDebug              # one command, both phones
 ```
 
-The app defaults to `https://baby.kalinka-work.lqy.ch`, editable on the login screen. That
+The app defaults to `https://baby.kalinka-work.lqy.ch`, editable in Settings. That
 certificate is from a private CA, so **it has to be installed on each phone as a user
 certificate** — both build types trust user anchors for this reason. The debug build also allows
 cleartext, so a laptop on the LAN works with no certificate at all.
@@ -420,7 +396,7 @@ cleartext, so a laptop on the LAN works with no certificate at all.
 
 Only useful for UI work — no real microphone, no Doze, no lock screen.
 
-**Pairing without an account cannot be tested here at all.** An emulator sits behind its own
+**Pairing over the WiFi cannot be tested here at all.** An emulator sits behind its own
 virtual NAT, so mDNS multicast never crosses between it and the machines on your WiFi, and its
 address is not routable from a phone. Two real phones on one network are the only way to exercise
 it — which is the case it exists for.
@@ -445,33 +421,32 @@ The webcam lets you hold the other phone up to it to test QR scanning.
 
 | route | |
 |---|---|
-| `POST api/auth/register` `login` `login-2fa` `logout` | sign-in |
-| `GET api/auth/status` | session check |
-| `POST api/auth/resend-confirmation` `forgot-password` `reset-password` | email flows |
-| `POST api/auth/invite` | add someone by email address |
-| `GET api/auth/confirm-email` `confirm-email-change` `accept-link` `reset-password-form` | followed from a mail, renders a page |
-| `GET api/account` · `PUT api/account/username` | account, display name |
-| `POST api/account/password` `email` `sign-out-everywhere` | self-service |
-| `GET/POST api/account/2fa/…` | two-factor |
-| `DELETE api/account` | delete, password required |
-| `GET api/devices` · `POST api/devices` · `DELETE api/devices/{id}` | the device registry |
-| `POST api/pairing/code` `claim` · `DELETE api/pairing/link/{id}` | pairing and linking |
+| `GET api/status` | `{"ok":true}`, no key needed |
+| `GET api/status/key` | 200 when `X-Server-Key` is right, 401 when not |
 | `GET api/turn/credentials` | a relay credential, good for twelve hours |
 
-Phones also hold a SignalR connection to `/hubs/devices`: device changes, presence, and the
-signalling for a call. A connection that sends `X-Device-Id` joins a group of its own, which is how
-one phone can be called rather than every phone on the account.
+Every call except the status check carries four headers: `X-Server-Key`, and `X-Device-Key`,
+`X-Device-Time`, `X-Device-Signature` — the phone's public key and its signature over
+`babymonitor-hub\n<time>`. A phone's id is the first 16 bytes of SHA-256 over its key, in hex, so
+the server needs no list of phones.
+
+Phones also hold a SignalR connection to `/hubs/devices`, signed in the same way:
+
+| method | |
+|---|---|
+| `Signal(json)` → `bool` | pass a message to one phone; true when it is connected |
+| `Watch(ids)` → `ids` | hear when these phones come and go; returns those online now |
+
+It sends `signal` and `devicePresence` back. The server never checks a signal's own signature —
+the phones do, against the key they scanned.
 
 ### Navigation
 
 ```
 Monitor | Devices | Settings          bottom bar
-   avatar top-right  ───────────────▸ Account      pushed, bar hidden
+   Monitor ▸ Check the picture ─────▸ CheckRoom    pushed, bar hidden
    Devices ▸ Connect another phone ─▸ Connect      pushed, bar hidden
 ```
-
-The avatar owns **who you are** — email, password, two-factor. Settings owns **how the app
-behaves** — alerts, video, the server address.
 
 ### If the Docker host has the certificate
 

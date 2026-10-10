@@ -45,11 +45,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
-import ch.kalinka.babymonitor.device.LocalSession
+import ch.kalinka.babymonitor.device.Phone
 import ch.kalinka.babymonitor.media.CallRole
 import ch.kalinka.babymonitor.media.CallState
 import ch.kalinka.babymonitor.media.MonitorViewModel
-import ch.kalinka.babymonitor.net.DeviceDto
 
 /**
  * Setting the monitor up: which phone stays in the room, and which other phone to open.
@@ -60,6 +59,7 @@ import ch.kalinka.babymonitor.net.DeviceDto
 @Composable
 fun MonitorScreen(
     onGoToDevices: () -> Unit,
+    onCheckRoom: () -> Unit,
     viewModel: MonitorViewModel = viewModel()
 ) {
     val others by viewModel.others.collectAsState()
@@ -79,6 +79,7 @@ fun MonitorScreen(
     val silent by viewModel.silent.collectAsState()
     val retrying by viewModel.retrying.collectAsState()
     val path by viewModel.path.collectAsState()
+    val keepScreenOn by viewModel.keepScreenOn.collectAsState()
 
     // Remembered across a drop, so a call being re-established keeps its screen instead of
     // bouncing back to the list and losing what was on it.
@@ -124,6 +125,8 @@ fun MonitorScreen(
             video = video,
             quality = quality,
             light = light,
+            keepScreenOn = keepScreenOn,
+            onKeepScreenOn = viewModel::setKeepScreenOn,
             onMute = viewModel::toggleMute,
             onVideo = viewModel::showVideo,
             onQuality = viewModel::chooseQuality,
@@ -152,8 +155,8 @@ fun MonitorScreen(
             Spacer(Modifier.height(8.dp))
         }
 
-        if (LocalSession(context).enabled) {
-            WithoutAccountLimits()
+        if (!viewModel.hasServer()) {
+            WifiOnlyNotice()
             Spacer(Modifier.height(24.dp))
         }
 
@@ -168,6 +171,14 @@ fun MonitorScreen(
             action = if (armed) "Stop monitoring" else "Use this phone as the monitor",
             done = armed,
             onAction = { if (armed) viewModel.disarm() else viewModel.arm() }
+        )
+
+        Step(
+            title = "Check the picture",
+            body = "See what this phone films and hears, to find a good spot for it.",
+            action = "Show the camera",
+            done = false,
+            onAction = onCheckRoom
         )
 
         // Checked again whenever the screen comes back, so granting it and returning clears this
@@ -312,7 +323,7 @@ private fun Step(
 
 @Composable
 private fun ListenRow(
-    device: DeviceDto,
+    device: Phone,
     online: Boolean,
     onListen: () -> Unit,
     onWatch: () -> Unit
@@ -326,13 +337,6 @@ private fun ListenRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(device.name, style = MaterialTheme.typography.titleMedium)
-                if (!device.isMine) {
-                    Text(
-                        text = "${device.ownerName}'s phone",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
 
                 // Being in the list means it exists; this means it can answer.
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -362,12 +366,9 @@ private fun ListenRow(
     }
 }
 
-/**
- * What no account costs, in the place where it matters. Said here rather than on the pairing
- * screen because that one is read once and this is the screen you come back to.
- */
+/** What running without a server costs, on the screen you come back to. */
 @Composable
-private fun WithoutAccountLimits() {
+private fun WifiOnlyNotice() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -376,11 +377,12 @@ private fun WithoutAccountLimits() {
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("No account", style = MaterialTheme.typography.titleSmall)
+            Text("No server", style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(8.dp))
-            for (limit in WithoutAccountCannot) {
-                Text("•  $limit", style = MaterialTheme.typography.bodyMedium)
-            }
+            Text("•  Both phones must be on the same WiFi.", style = MaterialTheme.typography.bodyMedium)
+            Text("•  You cannot listen from outside the house.", style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(4.dp))
+            Text("Add a server in Settings to change that.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -404,7 +406,7 @@ private fun Context.askToRunUnrestricted() {
 private fun onOrOff(allowed: Boolean) = if (allowed) "on" else "off"
 
 @Composable
-private fun CallStateLine(state: CallState, others: List<DeviceDto>) {
+private fun CallStateLine(state: CallState, others: List<Phone>) {
     fun nameOf(deviceId: String) = others.firstOrNull { it.id == deviceId }?.name ?: "the other phone"
 
     val line = when (state) {

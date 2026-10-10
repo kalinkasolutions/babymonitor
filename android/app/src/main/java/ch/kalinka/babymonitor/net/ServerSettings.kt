@@ -1,39 +1,42 @@
 package ch.kalinka.babymonitor.net
 
 import android.content.Context
+import androidx.core.content.edit
 import ch.kalinka.babymonitor.BuildConfig
 
 /**
- * Where the backend lives. Kept editable on the login screen because the address differs per
- * install — a LAN address at home, a public hostname from outside — and there is no sensible
- * default to hard-code.
+ * The optional relay server: its address and the key that lets a phone use it. Without one the
+ * phones still work, but only on the same WiFi.
  */
 class ServerSettings(context: Context) {
     private val prefs = context.getSharedPreferences("server", Context.MODE_PRIVATE)
 
-    /** Empty until somebody says where it is, which on a fresh install is nowhere. */
     var baseUrl: String
-        get() = prefs.getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL
-        set(value) = prefs.edit().putString(KEY_BASE_URL, normalise(value)).apply()
+        get() = prefs.getString(BaseUrl, DefaultBaseUrl) ?: DefaultBaseUrl
+        set(value) = prefs.edit { putString(BaseUrl, normaliseUrl(value)) }
+
+    var key: String
+        get() = prefs.getString(Key, "").orEmpty()
+        set(value) = prefs.edit { putString(Key, value.trim()) }
+
+    val isConfigured: Boolean
+        get() = baseUrl.isNotBlank() && key.isNotBlank()
 
     private companion object {
-        const val KEY_BASE_URL = "baseUrl"
+        const val BaseUrl = "baseUrl"
+        const val Key = "key"
 
-        /**
-         * A development build points at the development backend, because that is where it is
-         * every time. A release build points nowhere: there is no address that is right for
-         * somebody else's house, and guessing one would only fail later and less clearly.
-         */
-        val DEFAULT_BASE_URL = if (BuildConfig.DEBUG) "https://baby.kalinka-work.lqy.ch" else ""
+        // A release build points nowhere: no address is right for somebody else's house.
+        val DefaultBaseUrl = if (BuildConfig.DEBUG) "https://baby.kalinka-work.lqy.ch" else ""
+    }
+}
 
-        /** Accepts what people type: a bare hostname is meant as https, and a trailing / is noise. */
-        fun normalise(value: String): String {
-            val trimmed = value.trim().trimEnd('/')
-            return when {
-                trimmed.isEmpty() -> ""
-                trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
-                else -> "https://$trimmed"
-            }
-        }
+/** Accepts what people type: a bare hostname is meant as https, and a trailing / is noise. */
+fun normaliseUrl(value: String): String {
+    val trimmed = value.trim().trimEnd('/')
+    return when {
+        trimmed.isEmpty() -> ""
+        trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
+        else -> "https://$trimmed"
     }
 }

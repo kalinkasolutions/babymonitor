@@ -20,13 +20,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -46,44 +41,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.kalinka.babymonitor.device.PairingViewModel
 import ch.kalinka.babymonitor.device.ScanOutcome
-import ch.kalinka.babymonitor.ui.ErrorText
 import ch.kalinka.babymonitor.ui.QrCode
 
 /**
- * Pairing, as a full screen with no bottom bar — a task you finish and leave.
- *
- * Showing and scanning are tabs rather than roles, because either phone can do either. One scan
- * settles both phones: the scanner reads the key off the screen, and proves it did, so the phone
- * that was scanned can trust it back. Whichever side this phone played, it leaves with a verdict.
+ * Pairing, as a full screen with no bottom bar. Showing and scanning are tabs rather than roles,
+ * because either phone can do either, and one scan settles both phones.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConnectScreen(
     onBack: () -> Unit,
-    onInvite: () -> Unit,
     viewModel: PairingViewModel = viewModel()
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val outcome by viewModel.outcome.collectAsState()
-    val error by viewModel.error.collectAsState()
-    val code by viewModel.code.collectAsState()
-    val busy by viewModel.busy.collectAsState()
-    val secondsLeft by viewModel.secondsLeft.collectAsState()
+    val paired = outcome is ScanOutcome.Confirmed || outcome is ScanOutcome.ConfirmedByScanner
 
-    // Reached from either side: this phone scanned, or it was scanned and the server said so.
-    val paired = outcome is ScanOutcome.Confirmed ||
-        outcome is ScanOutcome.ConfirmedByScanner ||
-        outcome is ScanOutcome.LinkedOnly
-
-    // Nothing to say when it worked: the screen closing is the answer, and the trust it reached
-    // is on the device list next to the phone it belongs to. Only trouble is worth a dialog.
+    // When it worked, closing the screen is the answer. Only trouble is worth a dialog.
     LaunchedEffect(paired) {
         if (paired) {
             viewModel.dismissOutcome()
@@ -115,41 +95,18 @@ fun ConnectScreen(
             TabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Show") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Scan") })
-
-                // A typed code links two accounts. With none, there is nothing it could say.
-                if (!viewModel.withoutAccount) {
-                    Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Type") })
-                }
             }
 
             when (tab) {
-                0 -> ShowCode(
-                    payload = viewModel.qrPayload,
-                    shortCode = code?.code,
-                    secondsLeft = secondsLeft,
-                    error = error,
-                    withoutAccount = viewModel.withoutAccount,
-                    onNewCode = viewModel::newCode,
-                    onInvite = onInvite
-                )
-
-                1 -> ScanCode(viewModel::onScanned)
-                else -> TypeCode(busy, viewModel::onCodeTyped)
+                0 -> ShowCode(viewModel.qrPayload, viewModel.wifiOnly)
+                else -> ScanCode(viewModel::onScanned)
             }
         }
     }
 }
 
 @Composable
-private fun ShowCode(
-    payload: String?,
-    shortCode: String?,
-    secondsLeft: Long,
-    error: String?,
-    withoutAccount: Boolean,
-    onNewCode: () -> Unit,
-    onInvite: () -> Unit
-) {
+private fun ShowCode(payload: String, wifiOnly: Boolean) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -157,19 +114,6 @@ private fun ShowCode(
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        if (payload == null) {
-            Text(
-                text = "No code yet. This phone has to reach the server once to get one.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            ErrorText(error)
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = onNewCode) { Text("Try again") }
-            return@Column
-        }
-
         Text(
             text = "Scan this code with the other phone.",
             style = MaterialTheme.typography.bodyMedium,
@@ -178,91 +122,18 @@ private fun ShowCode(
         )
         Spacer(Modifier.height(20.dp))
         QrCode(payload, size = 240.dp)
-
-        if (!shortCode.isNullOrBlank()) {
-            Spacer(Modifier.height(20.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(16.dp))
-            Text("No camera? Read this out instead:", style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = shortCode,
-                style = MaterialTheme.typography.headlineMedium,
-                fontFamily = FontFamily.Monospace
-            )
-            Text(
-                text = "Typing it links the phones but cannot carry a key, so they stay at " +
-                    "trust 1 of 2 until one scans the other.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "Good for another ${secondsLeft / 60}:${(secondsLeft % 60).toString().padStart(2, '0')}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-
-        if (withoutAccount) {
-            // Nothing here expires and nothing can be typed, so the screen should stop implying
-            // both. The one thing it must say is the condition the scan fails without.
-            Spacer(Modifier.height(16.dp))
-            Text(
-                text = "Both phones must be on the same WiFi.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            return@Column
-        }
-
-        Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onNewCode) { Text("New code") }
-
-        Spacer(Modifier.height(8.dp))
-        HorizontalDivider()
-        Spacer(Modifier.height(12.dp))
-        Text("Not in the same room?", style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = onInvite) { Text("Invite by email instead") }
-    }
-}
-
-@Composable
-private fun TypeCode(busy: Boolean, onSubmit: (String) -> Unit) {
-    var entered by rememberSaveable { mutableStateOf("") }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+        Spacer(Modifier.height(16.dp))
         Text(
-            text = "Type the code shown on the other phone. This links them so they can see each " +
-                "other; the keys stay unconfirmed until one scans the other.",
+            text = if (wifiOnly) {
+                "Both phones must be on the same WiFi."
+            } else {
+                "The code also carries this phone's server settings, so the other phone does " +
+                    "not need them typed in."
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
-        Spacer(Modifier.height(20.dp))
-        OutlinedTextField(
-            value = entered,
-            onValueChange = { entered = it.uppercase() },
-            label = { Text("Code") },
-            singleLine = true,
-            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(
-            onClick = { onSubmit(entered) },
-            enabled = !busy && entered.isNotBlank(),
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Link") }
     }
 }
 
@@ -332,47 +203,22 @@ private fun ScanCode(onScanned: (String) -> Unit) {
 @Composable
 private fun ScanOutcomeDialog(outcome: ScanOutcome, onDismiss: () -> Unit) {
     val (title, body) = when (outcome) {
-        is ScanOutcome.Confirmed ->
-            "${outcome.deviceName}: trust 2 of 2" to
-                "Linked, and the key on that screen matches the one the server handed over, " +
-                    "so nothing is sitting in between. That one scan settles both phones; there " +
-                    "is nothing to scan back."
-
-        is ScanOutcome.ConfirmedByScanner ->
-            "${outcome.deviceName}: trust 2 of 2" to
-                "${outcome.deviceName} scanned this screen and proved it, so its key is genuine " +
-                    "and this phone has kept it. Both sides are confirmed. Nothing left to do."
-
         is ScanOutcome.ProofFailed ->
             "${outcome.deviceName} could not prove it" to
-                "${outcome.deviceName} is linked, but it could not show it had read the code off " +
-                    "this screen. That happens when the code was refreshed mid-scan. It is also " +
-                    "what somebody relaying a key of their own would look like. The keys are not " +
-                    "confirmed: show a fresh code and scan it again."
-
-        is ScanOutcome.LinkedOnly ->
-            "${outcome.deviceName}: trust 1 of 2" to
-                "Linked, so the phones can see each other. A typed code cannot carry a key, so " +
-                    "this rests on trusting the server. Scan the other phone's code when you are " +
-                    "next together to get to 2 of 2."
-
-        is ScanOutcome.Mismatch ->
-            "That key does not match" to
-                "${outcome.deviceName} is showing a different key from the one the server gave " +
-                    "for it. That happens when the app is reinstalled, but it is also exactly " +
-                    "what listening in would look like. Do not trust the connection until it is " +
-                    "re-registered and scanned again."
+                "${outcome.deviceName} could not show it had read the code off this screen. " +
+                    "That happens when it scanned an older code. It is also what a stranger " +
+                    "faking a pairing would look like. Nothing was paired: scan again."
 
         ScanOutcome.NotAPairingCode ->
-            "Not a pairing code" to "That QR code is something else."
+            "Not a pairing code" to "That QR code is something else, or comes from an older " +
+                "version of the app. Update both phones."
 
-        is ScanOutcome.Failed -> "Could not link" to outcome.message
+        is ScanOutcome.Failed -> "Could not pair" to outcome.message
 
         // Handled by closing the screen rather than by a dialog.
         ScanOutcome.None,
         is ScanOutcome.Confirmed,
-        is ScanOutcome.ConfirmedByScanner,
-        is ScanOutcome.LinkedOnly -> return
+        is ScanOutcome.ConfirmedByScanner -> return
     }
 
     AlertDialog(

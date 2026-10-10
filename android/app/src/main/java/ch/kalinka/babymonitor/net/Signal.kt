@@ -83,9 +83,9 @@ object SignalKinds {
     const val Video = "video"
 
     /**
-     * "I scanned your screen, and here is who I am." Only ever travels across the LAN, and is the
-     * one message accepted from a phone whose key is not yet confirmed — because it is the
-     * message that confirms it. The proof inside is what makes that safe.
+     * "I scanned your screen, and here is who I am." The one message accepted from a phone whose
+     * key is not yet confirmed, because it is the message that confirms it. The proof inside is
+     * what makes that safe.
      */
     const val Pair = "pair"
 }
@@ -133,13 +133,18 @@ data class CallRequest(val video: Boolean = false, val quality: String = "")
 @Serializable
 data class QualityRequest(val quality: String = "")
 
-/** Who scanned, and the proof they were looking at the screen when they did. */
+/**
+ * Who scanned, and the proof they were looking at the screen when they did. Carries the scanner's
+ * relay settings too, so a phone without any picks them up from the pairing.
+ */
 @Serializable
 data class PairRequest(
     val deviceId: String = "",
     val name: String = "",
     val publicKey: String = "",
-    val proof: String = ""
+    val proof: String = "",
+    val server: String = "",
+    val serverKey: String = ""
 )
 
 /** Whether the camera should be running. */

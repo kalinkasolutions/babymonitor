@@ -234,10 +234,7 @@ class WebRtcMediaLink(
             return
         }
 
-        // Full scale is a 16 bit maximum; the quietest worth drawing is about sixty decibels down.
-        val rms = kotlin.math.sqrt(sum / count)
-        val decibels = 20 * kotlin.math.log10((rms / Short.MAX_VALUE).coerceAtLeast(1e-7))
-        val next = ((decibels + QuietDecibels) / QuietDecibels).toFloat().coerceIn(0f, 1f)
+        val next = loudnessOf(sum, count)
         level = if (next > level) next else level + (next - level) * FallRate
 
         val now = System.currentTimeMillis()
@@ -423,9 +420,6 @@ class WebRtcMediaLink(
     private companion object {
         const val StreamId = "babymonitor"
         const val ChannelLabel = "status"
-
-        /** Below this much under full scale, a nursery is simply quiet. */
-        const val QuietDecibels = 60.0
 
         const val LevelInterval = 200L
         const val FallRate = 0.25f

@@ -1,5 +1,5 @@
-using Babymonitor.BusinessLogic.Services.Turn;
 using Babymonitor.Extensions;
+using Babymonitor.Turn;
 
 namespace Babymonitor.Endpoints;
 
@@ -7,11 +7,9 @@ public static class TurnEndpoint
 {
     public static void MapTurnEndpoint(this IEndpointRouteBuilder builder)
     {
-        builder.MapGet("api/turn/credentials", IssueAsync).RequireAuthorization();
+        builder.MapGet("api/turn/credentials", Issue).RequireAuthorization();
     }
 
-    private static IResult IssueAsync(ITurnService turnService, HttpContext httpContext)
-    {
-        return turnService.IssueAsync(httpContext.User.GetUserId()).ToHttpResult();
-    }
+    private static IceServers Issue(TurnService turnService, HttpContext httpContext) =>
+        turnService.Issue(httpContext.User.GetDeviceId());
 }

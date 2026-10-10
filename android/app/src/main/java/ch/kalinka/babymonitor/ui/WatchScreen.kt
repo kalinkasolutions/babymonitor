@@ -24,10 +24,13 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,9 +40,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import ch.kalinka.babymonitor.media.CallPath
 import ch.kalinka.babymonitor.media.CaptureQuality
@@ -78,6 +88,8 @@ fun WatchScreen(
     video: Boolean,
     quality: CaptureQuality,
     light: LightState,
+    keepScreenOn: Boolean,
+    onKeepScreenOn: (Boolean) -> Unit,
     onMute: () -> Unit,
     onVideo: (Boolean) -> Unit,
     onQuality: (CaptureQuality) -> Unit,
@@ -89,6 +101,25 @@ fun WatchScreen(
     LifecycleResumeEffect(Unit) {
         onWatching(true)
         onPauseOrDispose { onWatching(false) }
+    }
+
+    val view = LocalView.current
+    DisposableEffect(keepScreenOn) {
+        view.keepScreenOn = keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
+
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
+    if (fullscreen) {
+        FullscreenRoom(
+            videoTrack = videoTrack.takeIf { video },
+            status = status,
+            path = path,
+            noise = noise,
+            alarmAt = alarmAt,
+            arming = arming,
+            onExit = { fullscreen = false }
+        )
     }
 
     Column(
@@ -123,24 +154,15 @@ fun WatchScreen(
                 .clip(MaterialTheme.shapes.medium)
                 .background(Color.Black)
         ) {
-            if (videoTrack != null && video) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { context ->
-                        SurfaceViewRenderer(context).apply {
-                            init(WebRtcEgl.base.eglBaseContext, null)
-                            setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
-                        }
-                    },
-                    onRelease = { renderer ->
-                        videoTrack.removeSink(renderer)
-                        renderer.release()
-                    },
-                    update = { renderer -> videoTrack.addSink(renderer) }
-                )
+            if (videoTrack != null && video && !fullscreen) {
+                RoomVideo(videoTrack, Modifier.fillMaxSize())
             } else {
                 Text(
-                    text = if (video) "Waiting for the picture…" else "Listening. Camera is off.",
+                    text = when {
+                        fullscreen -> "Showing full screen."
+                        video -> "Waiting for the picture…"
+                        else -> "Listening. Camera is off."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White,
                     modifier = Modifier.align(Alignment.Center)
@@ -180,13 +202,130 @@ fun WatchScreen(
                 CameraButton(on = video, onClick = { onVideo(!video) })
                 MuteButton(muted = muted, onClick = onMute)
                 QualityMenu(selected = quality, onChoose = onQuality)
+                FullscreenButton(exit = false, onClick = { fullscreen = true })
             }
         }
 
         Spacer(Modifier.height(16.dp))
         LightControls(light, onLight)
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Keep this screen on",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(checked = keepScreenOn, onCheckedChange = onKeepScreenOn)
+        }
         Spacer(Modifier.height(16.dp))
         Button(onClick = onStop) { Text("Stop watching") }
+    }
+}
+
+/** The other phone's picture. One renderer per view; it detaches itself when it leaves. */
+@Composable
+private fun RoomVideo(videoTrack: VideoTrack, modifier: Modifier = Modifier) {
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            SurfaceViewRenderer(context).apply {
+                init(WebRtcEgl.base.eglBaseContext, null)
+                setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+            }
+        },
+        onRelease = { renderer ->
+            videoTrack.removeSink(renderer)
+            renderer.release()
+        },
+        update = { renderer -> videoTrack.addSink(renderer) }
+    )
+}
+
+/**
+ * The picture over the whole screen, system bars hidden. A dialog, because it has to cover the
+ * app's own bars too. Back or the button brings the controls back.
+ */
+@Composable
+private fun FullscreenRoom(
+    videoTrack: VideoTrack?,
+    status: PhoneStatus?,
+    path: CallPath,
+    noise: Float,
+    alarmAt: Float,
+    arming: Float,
+    onExit: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onExit,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+        DisposableEffect(window) {
+            window?.let {
+                WindowCompat.getInsetsController(it, it.decorView).apply {
+                    hide(WindowInsetsCompat.Type.systemBars())
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            }
+            onDispose { }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            if (videoTrack != null) {
+                RoomVideo(videoTrack, Modifier.fillMaxSize())
+            } else {
+                Text(
+                    text = "Camera is off.",
+                    color = Color.White,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+
+            NoiseMeter(
+                level = noise,
+                threshold = alarmAt,
+                arming = arming,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(16.dp)
+            )
+
+            if (status != null || path != CallPath.Unknown) {
+                StatusOverlay(
+                    status = status ?: PhoneStatus(),
+                    path = path,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                )
+            }
+
+            FullscreenButton(
+                exit = true,
+                onClick = onExit,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun FullscreenButton(exit: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(Scrim)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(18.dp)) { drawFullscreen(exit) }
     }
 }
 

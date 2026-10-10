@@ -23,3 +23,4 @@ data/
 # be committed, and losing it means no future release can upgrade the app people already have.
 *.jks
 *.keystore
+backend/.idea/

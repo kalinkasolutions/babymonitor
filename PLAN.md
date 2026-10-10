@@ -88,53 +88,29 @@ had, applied to both ends of the call instead of one: the phone being watched mu
 watching, and the phone watching must trust what it is being sent, or a substituted stream is
 indistinguishable from a quiet room.
 
-### Linking and trust are two different things
+### Pairing is the whole of trust
 
-**A link decides what you can see.** Two accounts are linked by scanning a code, typing one, or
-accepting an emailed invitation — the person who was invited follows the link in the mail, since
-an account that already exists is not the inviter's to give away. Phones on one account see each
-other with no link needed — they already share an account. Links are not transitive: linking to a
-babysitter does not introduce them to your partner.
-
-**Trust decides what you can believe**, and it is a property of one pair of phones, held on the
-phones themselves. Each device generates an identity key in the Android keystore where the
+There are no accounts. Each phone generates an identity key in the Android keystore, where the
 private half cannot be exported, so a key belongs to one install on one phone for as long as it
-lives.
+lives. A phone's id is a digest of that key.
 
-| how they met | link | trust |
-|--------------|------|-------|
-| same account | automatic | 1 of 2 |
-| typed code | yes | 1 of 2 |
-| emailed invitation | once accepted | 1 of 2 |
-| scanned QR code | yes | 2 of 2 |
+Two phones pair by scanning a QR code. The scanner reads the other phone's key straight off its
+screen, so nothing in between can swap it. The QR also carries a one-time secret; the scanner
+signs its own identity with it and sends that back, over the WiFi or through the server. The
+secret went from a screen to a camera and never near the server, so the phone that was scanned
+can believe the proof. One scan settles both phones, and what cannot be proved is reported
+rather than counted as a pairing.
 
-**1 of 2** means the backend vouched for the key and nothing else did. **2 of 2** means somebody
-read the key off the other phone's screen and it matched. A code short enough to say out loud
-cannot carry a key at all, which is why only the QR reaches 2 of 2 — and why an invitation sent
-to somebody in another town always starts at 1 of 2 and is upgraded when you are next together.
+The list of paired phones lives on each phone and is never sent anywhere, so a compromised
+server cannot add to it. A reinstall makes a new key, and so a new phone that has to be paired
+again.
 
-One scan settles both phones. The QR carries a one-time secret as well as the key; the phone that
-scans signs its own identity with that secret, and the backend relays a signature it can neither
-check nor forge, because the secret went from a screen to a camera and never near the server. So
-the scanner believes what it read directly, and the phone that was scanned believes the proof.
-Nobody has to scan back. What cannot be proved is never quietly counted as a confirmation: the
-phone that showed the code says so instead, since a proof that goes missing is exactly what a
-backend putting its own key in the middle would produce.
+### What the server is for
 
-The other way to reach 2 of 2 needs no camera: both phones show a short number derived from the
-two keys, and the two people check it is the same. A substituted key would make the two phones
-hash different pairs, so matching numbers confirm both keys at once. That is the route back from
-a key that changed, and the only route for two people who are never in the same room.
-
-Note that phones on your own account start at 1 of 2 like everything else. The only reason they
-appear to belong together is that the backend says so, and that is precisely the claim a scan
-exists to check. Treating them as trusted because they share a password would be a convenience
-dressed up as a guarantee.
-
-The trust verdict is stored on each phone and never sent anywhere, so a compromised backend
-cannot grant it. If the server later reports a different key for a phone that was confirmed, the
-app says the key changed rather than going along with it. A reinstall does exactly this, because
-a new install really is a new identity.
+Only what has to cross the internet: passing signals between two phones on different networks,
+saying which paired phones are connected, and handing out relay credentials. It keeps no state.
+A phone signs in with a signature over the current time, which proves it holds the key behind
+its id, and a shared server key decides who may use the server at all.
 
 ---
 
@@ -142,13 +118,13 @@ a new install really is a new identity.
 
 ### 1. Setup, once
 
-Both phones install the same app and sign in to the same account. Pairing is symmetric:
+Both phones install the same app. There is nothing to sign in to. Pairing is symmetric:
 either phone can show a QR code and either can scan it. The scan exchanges long-term
-identity keys out of band, which is what makes the media path verifiable later.
+identity keys out of band, which is what makes the media path verifiable later. If the
+household runs a server, its address and key travel in the same QR code.
 
-Someone who is not in the room is added the other way, by entering their email address
-and sending an invitation — a second parent, or a babysitter. If they already have an
-account, the mail asks them first; nothing is linked until they say yes.
+Somebody who is not in the room is paired the next time they are: a scan needs both phones
+in one place, and that is the point of it.
 
 Both phones then grant camera and microphone permission, because either may end up
 recording, and both are walked through the battery optimisation exemption, since that

@@ -9,16 +9,13 @@ services:
     ports:
       - "${APP_BIND_ADDRESS:-127.0.0.1}:7881:5001"
     restart: always
-    volumes:
-      # SQLite database and the Data Protection key ring. Without this, a redeploy loses every
-      # account and invalidates every issued cookie, signing all the phones out.
-      - ./data:/var/srv
     environment:
       - ASPNETCORE_URLS=http://+:5001
-      # .NET defaults to Production, which does not load appsettings.Development.json and so
-      # creates no seed accounts. Set Development on a machine where those known logins are
-      # wanted; leave it Production anywhere they would be a way in.
+      # Development only adds the cause of a server error to the response. Leave it Production.
       - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
+      # Every phone sends this key, so only people told it can use the relay. The app refuses
+      # to start without one.
+      - Server__Key=${SERVER_KEY:?set SERVER_KEY in .env}
       # nginx terminates TLS and forwards plain HTTP, so only it knows the request was secure.
       # Those headers are forgeable, so they are believed only from an address named here. The
       # framework's own default is loopback, which inside a container means nobody — the proxy
@@ -28,28 +25,9 @@ services:
       # Instead of TrustAny when the port is reachable by anything but the proxy. Addresses or
       # CIDR ranges, numbered from zero: Proxy__Trusted__0, Proxy__Trusted__1, and so on.
       - Proxy__Trusted__0=${PROXY_TRUSTED:-}
-      # How hard the endpoints an outsider can reach may be hammered. Counted per address, and a
-      # household is one address, so these are set where a family never notices them.
-      - RateLimits__CredentialsPerFiveMinutes=${RATE_LIMIT_CREDENTIALS:-20}
-      - RateLimits__PairingClaimsPerMinute=${RATE_LIMIT_PAIRING_CLAIMS:-10}
-      - RateLimits__InvitesPerHour=${RATE_LIMIT_INVITES:-5}
-      # Minimum log level written to the console and the SQLite "Logs" table. One of:
+      # Minimum log level written to the console. One of:
       # Trace, Debug, Information, Warning, Error, Critical. Defaults to Information.
       - Logging__LogLevel__Default=${LOG_LEVEL:-Information}
-      # How long a log line is kept in the "Logs" table before the sink prunes it.
-      - Logging__RetentionDays=${LOG_RETENTION_DAYS:-30}
-      # Email / SMTP settings (override appsettings.json "Email" section). Double underscores
-      # map to config nesting. Put secrets in a .env file next to this compose file rather than
-      # committing them; BaseUrl must be the app's public origin, because confirmation and
-      # invitation links are followed from a mail client and land on the API itself.
-      - Email__SmtpHost=${EMAIL_SMTP_HOST}
-      - Email__Port=${EMAIL_PORT:-587}
-      - Email__Username=${EMAIL_USERNAME}
-      - Email__Password=${EMAIL_PASSWORD}
-      - Email__FromAddress=${EMAIL_FROM_ADDRESS}
-      - Email__FromName=${EMAIL_FROM_NAME:-Babymonitor}
-      - Email__SecureSocketOptions=${EMAIL_SECURE_SOCKET_OPTIONS:-StartTls}
-      - Email__BaseUrl=${EMAIL_BASE_URL}
       # The relay. This secret is shared with coturn below — the backend signs credentials with
       # it and coturn recomputes the same signature, which is why there are no accounts to
       # provision. Leave it blank to run with no relay at all: two phones on one WiFi never need

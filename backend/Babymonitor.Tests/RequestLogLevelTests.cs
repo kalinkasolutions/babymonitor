@@ -16,7 +16,7 @@ public sealed class RequestLogLevelTests
     public void AnOrdinaryRequestIsWorthALine() =>
         Assert.Equal(
             LogEventLevel.Information,
-            RequestLoggingExtension.LevelFor(new PathString("/api/devices"), 200, failed: false));
+            RequestLoggingExtension.LevelFor(new PathString("/api/turn/credentials"), 200, failed: false));
 
     [Fact]
     public void AWebsocketHoldingOpenIsNot() =>
@@ -35,7 +35,7 @@ public sealed class RequestLogLevelTests
     public void AServerErrorIsAnError() =>
         Assert.Equal(
             LogEventLevel.Error,
-            RequestLoggingExtension.LevelFor(new PathString("/api/account"), 500, failed: false));
+            RequestLoggingExtension.LevelFor(new PathString("/api/turn/credentials"), 500, failed: false));
 
     [Fact]
     public void AThrownRequestIsAnErrorWhateverTheStatus() =>

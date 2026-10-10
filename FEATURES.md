@@ -40,7 +40,7 @@ Two signalling paths, so the normal case does not depend on the internet:
 - [x] Signed messages carry the time they were signed, so one captured in flight cannot be
       replayed later — a replayed "stop" would end a call
 - [x] Signalling through the backend when the phones are on different networks — offer,
-      answer and candidates, addressed to one phone rather than to an account
+      answer and candidates, addressed to one phone by an id derived from its key
 - [x] Keep working when the WAN is down but the WiFi is up — signalling over the LAN, media
       direct, neither touching the internet
 
@@ -99,44 +99,26 @@ Known reasons the direct LAN path fails, all worth naming in that diagnostic:
 
 ### Pairing
 
-A link decides visibility; trust is decided separately, on the phones:
+Pairing is the scan, and the scan is all of trust. No accounts:
 
-- [x] No account at all: two phones on one WiFi pair by scanning, find each other over mDNS and
-      never touch a server. Signing in buys what has to leave the house — a babysitter invited by
-      email, a phone reachable from outside, recovery when one is lost
-- [x] Pairing without a server is the scan itself: no code to mint, and the phone that scanned
-      says who it is across the WiFi, proving it with the secret that was only ever on the screen
-
-- [x] Accounts linked by scanning a QR code, typing a short code, or an emailed invitation
-- [x] An invitation to an address that already has an account links nothing until that person
-      accepts it from the mail
-- [x] Phones on one account see each other with no link needed
-- [x] Links are not transitive — linking to a babysitter does not introduce them to anyone else
-- [x] Linking codes are single use and expire after five minutes; asking for a new one retires
-      the old one at once
-- [x] Short codes are eight characters from an alphabet with no lookalikes, accepted in any
-      case and with or without the dash
-- [x] Trust 1 of 2 (the backend vouched for the key) and 2 of 2 (somebody read it off the
-      other phone's screen), shown per phone
-- [x] A QR carries the key as well as the code, which is the only reason it can reach 2 of 2
-- [x] An invitation or a typed code can be upgraded to 2 of 2 by scanning later
-- [x] Confirmed keys pinned on the phone and never sent anywhere, so the backend cannot
-      grant trust
-- [x] A key that changes after being confirmed is reported, not accepted
-- [x] Both sides reach 2 of 2 from one scan: the QR carries a one-time secret the scanner
-      signs its identity with, which the backend can relay but neither read nor forge
-- [x] A pairing the phone that showed the code cannot confirm is reported as unconfirmed
-      rather than treated as done
-- [x] Both sides reach 2 of 2 from one comparison of the safety number, for two people with
-      no camera between them
-- [x] Unlink an account again from the app
+- [x] Two phones pair by scanning a QR code. The key is read off the screen, so nothing in
+      between can swap it
+- [x] One scan confirms both phones: the QR carries a one-time secret the scanner signs its
+      identity with, and the phone that was scanned checks it before trusting anybody
+- [x] The message that says "I scanned you" travels over the WiFi, or through the server when
+      there is one — so two phones can pair on mobile data
+- [x] The QR carries the server address and key too, so only one phone needs them typed in
+- [x] A phone's id is a digest of its key, so the server can check who is who and neither
+      the server nor anyone on the WiFi can claim another phone's id
+- [x] Paired phones kept on the phone and never sent anywhere, so the server cannot grant trust
+- [x] Remove a paired phone from the app
 - [x] Refuse to stream to a phone whose key changed, rather than only warning — a signal it
       cannot sign for is dropped, so a changed key stops the call instead of colouring a badge
 
 ### Roles
 - [x] Switch this phone between recording and observing at any time
 - [ ] Switch the *other* phone's mode remotely
-- [ ] Swap both in one action, without re-pairing or signing out
+- [ ] Swap both in one action, without re-pairing
 - [x] Camera and microphone permission requested on both phones at setup, since either
       may end up recording
 
@@ -153,6 +135,8 @@ A link decides visibility; trust is decided separately, on the phones:
 
 ### Observing mode
 - [x] Live audio, playing with the screen off
+- [x] Keep the screen on while watching, as a remembered switch
+- [x] Full-screen video, with the noise meter and status kept on the picture
 - [x] The room can be watched without listening — sound off is local to the watching phone
 - [x] Noise level meter: measured on the phone in the room, since WebRTC hands over what it
       records and never what it plays, and sent on the data channel several times a second
@@ -198,6 +182,8 @@ Light, because phones have no infrared and a dark room films as black:
       running without waking the baby
 - [x] Front camera used for screen-lit video, since screen and lens face the same way
 - [x] Brightness and colour set from the observing phone, live, on a slider
+- [x] Check the picture before the night: the front camera and a sound meter on the phone in
+      the room, so it can be placed without a second phone
 - [ ] Setup guidance that the phone belongs within about a metre of the crib
 - [ ] Torch mode with the rear camera, for the best image when disruption is acceptable
 - [ ] Torch dimmed via turnOnTorchWithStrengthLevel, falling back to on/off where
@@ -220,46 +206,17 @@ Light, because phones have no infrared and a dark room films as black:
 
 ### Backend (.NET)
 
-Built:
+Optional, stateless, no database:
 
-- [x] Accounts on SQLite via ASP.NET Identity, cookie auth, roles seeded at startup
-- [x] Register, log in, log out, session status
-- [x] Email confirmation, resend, forgot/reset password over SMTP
-- [x] Invite someone by email address — the non-QR way to add a second person
-- [x] Two-factor authentication: TOTP setup, enable, disable, single-use recovery codes
-- [x] Account self-service: display name, email change (confirmed at the new address),
-      password, sign out everywhere, delete account
-- [x] Android account screen covering all of the above, with the 2FA secret as a QR code
-- [x] Device registry: register (idempotent on the identity key), list, rename, revoke
-- [x] Heartbeat carrying battery level and charging state, per device
-- [x] Devices are scoped to the account — another account gets 404, not 403, so ids
-      cannot be probed
-- [x] Identity keypair per phone in the Android keystore (EC P-256), private half never
-      leaves the device; its fingerprint is shown for comparison
-- [x] QR pairing: each phone shows its real public key, the other scans and compares it
-      against what the backend reported, and proves the scan to the phone it scanned
-- [x] Scanned keys pinned locally and never sent anywhere, so a later substitution by the
-      backend shows up as "key changed" rather than being accepted
-- [x] Device list shows verified / not verified / key changed per phone, and the badge opens
-      the comparison that settles it
-- [x] Grouped by account, with one unlink per account rather than a bin on each of its phones:
-      dropping a phone and dropping a whole account are not the same act
-- [x] Last seen per phone, because reinstalling leaves a registration behind that is identical
-      in name to the live one and only its age tells them apart
-- [x] Serilog to console and to a Logs table in the same SQLite file, with request
-      summaries and the calling user attached to every line
-
-Still to build:
-
-- [x] SignalR hub for signalling: offer, answer, ICE candidates, refused for phones the
-      account cannot reach and reporting whether the other phone was connected at all
-- [x] Device registry and pairing tokens, with claims throttled and codes spent atomically
-- [x] TURN credential endpoint issuing short-lived HMAC credentials, with no accounts
-      to provision on the relay
+- [x] A shared server key, so only people given it can use the server
+- [x] Phones sign in with their identity key: a signature over the current time, checked
+      against the key they send, which gives an id nobody else can claim
+- [x] SignalR hub that relays signals to one phone by id and says whether it was connected
+- [x] Presence: a phone asks to watch its paired phones and hears when they come and go
+- [x] TURN credential endpoint issuing short-lived HMAC credentials, with no accounts to
+      provision on the relay
 - [x] coturn itself, in its own project, with every internal range refused as a peer
 - [ ] FCM push to wake an observing phone whose connection dropped
-- [x] Presence per device: the hub announces a phone arriving or leaving, so the list says
-      which ones can actually answer
 - [x] No media stored, no media decrypted — the backend carries signalling only, and the
       relay forwards ciphertext it holds no key for
 

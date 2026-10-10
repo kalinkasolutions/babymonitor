@@ -90,8 +90,7 @@ jobs:
         working-directory: backend
         run: dotnet build --no-restore --configuration Release -warnaserror
 
-      # Babymonitor.Tests boots the real app against a temporary SQLite file, so this needs no
-      # database service alongside it.
+      # Babymonitor.Tests boots the real app in memory; it has no database to provide.
       - name: Run the backend tests
         working-directory: backend
         run: dotnet test --no-build --configuration Release --verbosity normal

@@ -30,7 +30,13 @@ class CallPreferences(context: Context) {
         get() = prefs.getBoolean(VideoOff, true)
         set(value) = prefs.edit { putBoolean(VideoOff, value) }
 
+    /** Whether the watching phone keeps its screen on while it shows the room. */
+    var keepScreenOn: Boolean
+        get() = prefs.getBoolean(ScreenOn, false)
+        set(value) = prefs.edit { putBoolean(ScreenOn, value) }
+
     private companion object {
         const val VideoOff = "startWithVideoOff"
+        const val ScreenOn = "keepScreenOn"
     }
 }

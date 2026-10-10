@@ -1,9 +1,7 @@
 root = true
 
 [*.cs]
-# CA1873: Avoid potentially expensive logging.
-# Our logging calls only pass value-type args (Guids) that get boxed into the
-# params array; that cost is negligible for this app, so the rule is noise.
+# CA1873: Avoid potentially expensive logging. Our log arguments are cheap, so the rule is noise.
 dotnet_diagnostic.CA1873.severity = none
 
 # --- Async correctness ---
@@ -16,8 +14,7 @@ dotnet_diagnostic.CA2016.severity = warning      # forward CancellationToken to 
 # Keep the ones that catch real bugs (deadlocks, forgotten awaits) as warnings.
 dotnet_diagnostic.VSTHRD002.severity = warning   # sync-blocking on async (.Result/.Wait())
 dotnet_diagnostic.VSTHRD100.severity = warning   # async void
-# VSTHRD103 disabled: it false-positives on EF's synchronous Add/AddRange, and the
-# built-in CA1849 already covers genuine call-async-in-async cases without that noise.
+# VSTHRD103 disabled: the built-in CA1849 covers the same cases with fewer false positives.
 dotnet_diagnostic.VSTHRD103.severity = none
 dotnet_diagnostic.VSTHRD110.severity = warning   # observe result of async calls (forgotten await)
 # Library/style-oriented rules — noise for an app.
@@ -34,7 +31,7 @@ dotnet_diagnostic.CA2201.severity = warning      # do not throw reserved excepti
 
 # --- Meziantou.Analyzer: silence opinion/style rules, keep the pitfall ones ---
 dotnet_diagnostic.MA0004.severity = none         # ConfigureAwait — app code, same as CA2007
-dotnet_diagnostic.MA0048.severity = none         # filename==typename — breaks on EF migrations
+dotnet_diagnostic.MA0048.severity = none         # filename==typename — small related types share a file
 dotnet_diagnostic.MA0016.severity = none         # return the collection abstraction (style)
 dotnet_diagnostic.MA0051.severity = none         # method is too long (style)
 dotnet_diagnostic.MA0002.severity = none         # IEqualityComparer<string> — ordinal is intended here

@@ -11,45 +11,22 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The signalling path against a backend that is actually running: two accounts, two phones, one
- * hub, and the messages a call is made of. Nothing here is mocked, which is the point — the parts
- * that break in this app are the ones between the two processes, and a stub of the hub would
- * agree with whatever the client believed.
+ * The signalling path against a relay that is actually running. Nothing is mocked: the parts
+ * that break are the ones between the two processes, and a stub would agree with the client.
  *
- * Skipped when there is no backend to talk to, so an ordinary `./gradlew test` stays green.
- * To run it:
+ * Skipped when there is no relay, so an ordinary `./gradlew test` stays green. To run it:
  *
- *     ConnectionStrings__Babymonitor="Data Source=/tmp/babymonitor-test.db" \
- *     ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://127.0.0.1:5199 \
+ *     Server__Key=integration-test-key ASPNETCORE_URLS=http://127.0.0.1:5199 \
  *     dotnet run --project backend/Babymonitor.Api --no-launch-profile
- *
- * The two accounts are the ones the Development configuration seeds.
  */
 class SignallingIntegrationTest {
-    private lateinit var parent: Backend
-    private lateinit var sitter: Backend
-
-    private lateinit var parentPhone: String
-    private lateinit var sitterPhone: String
-    private lateinit var sitterSpare: String
-
+    private val nursery = TestPhone()
+    private val bedside = TestPhone()
     private val hubs = mutableListOf<Hub>()
 
     @Before
-    fun twoPairedPhones() {
-        assumeTrue("No backend at ${Backend.Url}", Backend.isRunning())
-
-        parent = Backend(Backend.Url).apply { logIn("admin@local", "admin") }
-        sitter = Backend(Backend.Url).apply { logIn("niggi@local", "niggi") }
-
-        parentPhone = parent.registerDevice("Nursery phone", "TESTKEY-PARENT-1")
-        sitterPhone = sitter.registerDevice("Bedside phone", "TESTKEY-SITTER-1")
-
-        // A second phone for the sitter that never connects, so "nobody is listening" can be told
-        // apart from "no such phone".
-        sitterSpare = sitter.registerDevice("Spare phone", "TESTKEY-SITTER-2")
-
-        link()
+    fun relayIsUp() {
+        assumeTrue("No relay at ${Backend.Url}", Backend.isRunning())
     }
 
     @After
@@ -59,116 +36,88 @@ class SignallingIntegrationTest {
 
     @Test
     fun `an offer reaches the other phone with the sender stamped on it`() {
-        val nursery = hub(parent, parentPhone)
-        val bedside = hub(sitter, sitterPhone)
+        val from = hub(nursery)
+        val to = hub(bedside)
 
-        val delivered = nursery.signal(sitterPhone, SignalKinds.Offer, OFFER)
+        assertTrue("the bedside phone was connected", from.signal(bedside.deviceId, SignalKinds.Offer, OFFER))
 
-        assertTrue("the bedside phone was connected", delivered)
-        val arrived = bedside.nextSignal()
+        val arrived = to.nextSignal()
         assertEquals(SignalKinds.Offer, arrived?.kind)
         assertEquals(OFFER, arrived?.body)
-
-        // Stamped by the hub, not by the sender: the return address has to be one the other phone
-        // can rely on, or an answer goes to whoever asked for it.
-        assertEquals(parentPhone, arrived?.fromDeviceId)
+        assertEquals(nursery.deviceId, arrived?.fromDeviceId)
     }
 
     @Test
     fun `a full offer answer candidate exchange goes both ways`() {
-        val nursery = hub(parent, parentPhone)
-        val bedside = hub(sitter, sitterPhone)
+        val room = hub(nursery)
+        val bed = hub(bedside)
 
-        bedside.signal(parentPhone, SignalKinds.Start, "")
-        assertEquals(SignalKinds.Start, nursery.nextSignal()?.kind)
+        bed.signal(nursery.deviceId, SignalKinds.Start, "")
+        assertEquals(SignalKinds.Start, room.nextSignal()?.kind)
 
-        nursery.signal(sitterPhone, SignalKinds.Offer, OFFER)
-        assertEquals(SignalKinds.Offer, bedside.nextSignal()?.kind)
+        room.signal(bedside.deviceId, SignalKinds.Offer, OFFER)
+        assertEquals(SignalKinds.Offer, bed.nextSignal()?.kind)
 
-        bedside.signal(parentPhone, SignalKinds.Answer, ANSWER)
-        assertEquals(ANSWER, nursery.nextSignal()?.body)
+        bed.signal(nursery.deviceId, SignalKinds.Answer, ANSWER)
+        assertEquals(ANSWER, room.nextSignal()?.body)
 
-        bedside.signal(parentPhone, SignalKinds.Candidate, CANDIDATE)
-        assertEquals(CANDIDATE, nursery.nextSignal()?.body)
+        bed.signal(nursery.deviceId, SignalKinds.Candidate, CANDIDATE)
+        assertEquals(CANDIDATE, room.nextSignal()?.body)
+    }
+
+    @Test
+    fun `a pairing message is carried before either phone trusts the other`() {
+        val room = hub(nursery)
+        hub(bedside)
+
+        assertTrue(room.signal(bedside.deviceId, SignalKinds.Pair, "{}"))
     }
 
     @Test
     fun `a phone with no connection is reported rather than silently missed`() {
-        val nursery = hub(parent, parentPhone)
+        val room = hub(nursery)
 
-        val delivered = nursery.signal(sitterSpare, SignalKinds.Start, "")
-
-        assertFalse("the spare phone has never connected", delivered)
+        assertFalse(room.signal(TestPhone().deviceId, SignalKinds.Start, ""))
     }
 
     @Test
     fun `the signal goes to the one phone it is addressed to`() {
-        val nursery = hub(parent, parentPhone)
-        val bedside = hub(sitter, sitterPhone)
-        val spare = hub(sitter, sitterSpare)
+        val room = hub(nursery)
+        val bed = hub(bedside)
+        val stranger = hub(TestPhone())
 
-        nursery.signal(sitterPhone, SignalKinds.Start, "")
+        room.signal(bedside.deviceId, SignalKinds.Start, "")
 
-        assertEquals(SignalKinds.Start, bedside.nextSignal()?.kind)
-
-        // Same account, same hub, not addressed: an offer is for one phone.
-        assertNull(spare.nextSignal(seconds = 2))
+        assertEquals(SignalKinds.Start, bed.nextSignal()?.kind)
+        assertNull(stranger.nextSignal(seconds = 2))
     }
 
     @Test
-    fun `a phone on an unlinked account cannot be signalled`() {
-        val nursery = hub(parent, parentPhone)
-        unlink()
+    fun `a watched phone is reported arriving`() {
+        val room = hub(nursery)
+        assertEquals(emptyList<String>(), room.watch(bedside.deviceId))
 
-        val refused = runCatching { nursery.signal(sitterPhone, SignalKinds.Start, "") }
+        hub(bedside)
 
-        assertTrue("expected a refusal, got ${refused.getOrNull()}", refused.isFailure)
-        assertTrue(
-            "unexpected refusal: ${refused.exceptionOrNull()?.message}",
-            refused.exceptionOrNull()?.message.orEmpty().contains("not one this account can reach")
-        )
-    }
-
-    @Test
-    fun `a device id nobody owns is refused the same way`() {
-        val nursery = hub(parent, parentPhone)
-
-        val refused = runCatching {
-            nursery.signal("00000000-0000-4000-8000-000000000000", SignalKinds.Start, "")
-        }
-
-        assertTrue(refused.isFailure)
+        val arrived = room.nextPresence()
+        assertEquals(bedside.deviceId, arrived?.deviceId)
+        assertEquals(true, arrived?.isOnline)
     }
 
     @Test
     fun `a kind this server does not carry is refused`() {
-        val nursery = hub(parent, parentPhone)
+        val room = hub(nursery)
 
-        val refused = runCatching { nursery.signal(sitterPhone, "eavesdrop", "") }
-
-        assertTrue(refused.isFailure)
+        assertTrue(runCatching { room.signal(bedside.deviceId, "eavesdrop", "") }.isFailure)
     }
 
-    private fun hub(backend: Backend, deviceId: String): Hub =
-        backend.connectHub(deviceId).also { hubs.add(it) }
-
-    /**
-     * Pairs the two accounts, unless a previous test already did. Not unconditional: claiming is
-     * rate limited on purpose, and a test suite that burns a real account's budget every run is
-     * testing the limiter rather than the thing it came for.
-     */
-    private fun link() {
-        if (sitter.canSee(parentPhone)) {
-            return
-        }
-
-        val code = parent.pairingCode(parentPhone)
-        sitter.claim(code, sitterPhone)
+    @Test
+    fun `relay credentials need the right server key`() {
+        assertEquals(200, nursery.iceServersStatus())
+        assertEquals(401, nursery.iceServersStatus(nursery.authHeaders() + ("X-Server-Key" to "wrong")))
     }
 
-    private fun unlink() {
-        parent.unlinkFrom(parent.ownerOf(sitterPhone))
-    }
+    private fun hub(phone: TestPhone): Hub = phone.connectHub().also { hubs.add(it) }
 
     private companion object {
         const val OFFER = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"

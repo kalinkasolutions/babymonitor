@@ -30,21 +30,12 @@ sealed interface SignalResult {
     data class Refused(val reason: String) : SignalResult
 }
 
-/** Something the backend said, unprompted. */
+/** Something the relay said, unprompted. */
 sealed interface DeviceEvent {
-    data class Changed(val device: DeviceDto) : DeviceEvent
-    data class Removed(val deviceId: String) : DeviceEvent
-
-    /** Accounts were linked or unlinked, so the whole visible set changed. */
-    data object LinksChanged : DeviceEvent
-
-    /** A scan finished. Reaches the phone that showed the code as well as the one that read it. */
-    data class PairingCompleted(val completed: PairingCompletedDto) : DeviceEvent
-
     /** One signalling message from another phone, on the way to a media connection. */
     data class Signal(val signal: SignalMessage) : DeviceEvent
 
-    /** A phone arrived or dropped off. */
+    /** A watched phone connected to the relay or dropped off it. */
     data class Presence(val deviceId: String, val online: Boolean) : DeviceEvent
 }
 
@@ -52,9 +43,8 @@ sealed interface DeviceEvent {
 private data class DevicePresenceDto(val deviceId: String = "", val isOnline: Boolean = false)
 
 /**
- * The live feed of device changes. Nothing in this app asks the server "has anything happened?" —
- * the server says so, which is the only way a battery reading or a phone going offline can reach
- * the other handset promptly without draining both of them.
+ * The connection to the relay, when there is one. Signals and presence arrive here as they
+ * happen, so neither phone has to keep asking.
  */
 class DeviceStream(private val api: ApiClient) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -69,10 +59,14 @@ class DeviceStream(private val api: ApiClient) {
     @Volatile
     private var wanted = false
 
+    /** The phones whose presence this one wants to hear about. Sent again on every reconnect. */
+    @Volatile
+    private var watched: List<String> = emptyList()
+
     private val connecting = AtomicBoolean(false)
 
     fun connect() {
-        if (connection?.connectionState == HubConnectionState.CONNECTED) {
+        if (!api.isConfigured || connection?.connectionState == HubConnectionState.CONNECTED) {
             return
         }
 
@@ -87,13 +81,18 @@ class DeviceStream(private val api: ApiClient) {
         scope.launch { runCatching { hub.stop().blockingAwait() } }
     }
 
+    fun watch(deviceIds: List<String>) {
+        if (deviceIds == watched) {
+            return
+        }
+
+        watched = deviceIds
+        scope.launch { sendWatch() }
+    }
+
     /**
-     * Keeps trying until there is a connection or nobody wants one any more.
-     *
-     * The Java SignalR client has no automatic reconnect of its own, and a phone left on a shelf
-     * overnight loses this socket to a sleeping radio, a roaming access point or a backend
-     * restart. Without this it never comes back: the device feed goes quiet and a call can no
-     * longer be answered, with nothing on screen to say so.
+     * Keeps trying until there is a connection or nobody wants one any more. The Java SignalR
+     * client has no automatic reconnect, and a phone on a shelf overnight loses this socket often.
      */
     private fun openWithRetry() {
         if (!connecting.compareAndSet(false, true)) {
@@ -107,14 +106,14 @@ class DeviceStream(private val api: ApiClient) {
                     val hub = build()
                     connection = hub
                     if (runCatching { hub.start().blockingAwait() }.isSuccess) {
-                        Log.i(TAG, "Device feed connected")
+                        Log.i(TAG, "Relay connected")
+                        sendWatch()
                         return@launch
                     }
 
-                    // Disposed before the next attempt builds another. A phone left on a shelf
-                    // through a long outage would otherwise keep one of these per failed try.
+                    // Disposed before the next try, or a long outage piles these up.
                     runCatching { hub.stop().blockingAwait() }
-                    Log.w(TAG, "Device feed could not connect; retrying in ${wait}ms")
+                    Log.w(TAG, "Relay could not connect; retrying in ${wait}ms")
                     delay(wait)
                     wait = (wait * 2).coerceAtMost(LongestRetryMillis)
                 }
@@ -124,32 +123,24 @@ class DeviceStream(private val api: ApiClient) {
         }
     }
 
+    private fun sendWatch() {
+        val hub = connection?.takeIf { it.connectionState == HubConnectionState.CONNECTED } ?: return
+        val ids = watched
+        runCatching { hub.invoke(Array<String>::class.java, HUB_WATCH, ids.toTypedArray()).blockingGet() }
+            .onSuccess { online ->
+                val here = online.toSet()
+                ids.forEach { emit(DeviceEvent.Presence(it, it in here)) }
+            }
+            .onFailure { Log.w(TAG, "Could not ask the relay who is online", it) }
+    }
+
+    // Built fresh for every attempt: the signature in the headers is only good for a few minutes.
     private fun build(): HubConnection = HubConnectionBuilder
         .create("${api.baseUrl}/hubs/devices")
-        .withHeader("Cookie", api.cookieHeader())
-        // The device header is what lets the hub address this phone on its own rather than only
-        // as one of the account's: an offer is for one phone, and without this there is no way
-        // to say which.
-        .apply { api.deviceId?.let { withHeader(ApiClient.DEVICE_ID_HEADER, it) } }
+        .withHeaders(api.authHeaders())
         .build()
         .apply {
-            // The payloads arrive as JSON text and are decoded with the same serializer as the
-            // REST responses, rather than letting the SignalR client's own Gson reflect over
-            // Kotlin types.
-            on(EVENT_DEVICE_CHANGED, { payload: String ->
-                emit(DeviceEvent.Changed(json.decodeFromString(payload)))
-            }, String::class.java)
-
-            on(EVENT_DEVICE_REMOVED, { deviceId: String ->
-                emit(DeviceEvent.Removed(deviceId))
-            }, String::class.java)
-
-            on(EVENT_LINKS_CHANGED, { emit(DeviceEvent.LinksChanged) })
-
-            on(EVENT_PAIRING_COMPLETED, { payload: String ->
-                emit(DeviceEvent.PairingCompleted(json.decodeFromString(payload)))
-            }, String::class.java)
-
+            // Decoded with the same serializer as everything else, not the client's own Gson.
             on(EVENT_SIGNAL, { payload: String ->
                 emit(DeviceEvent.Signal(json.decodeFromString(payload)))
             }, String::class.java)
@@ -192,13 +183,10 @@ class DeviceStream(private val api: ApiClient) {
 
     private companion object {
         const val TAG = "DeviceStream"
-        const val EVENT_DEVICE_CHANGED = "deviceChanged"
-        const val EVENT_DEVICE_REMOVED = "deviceRemoved"
-        const val EVENT_LINKS_CHANGED = "linksChanged"
-        const val EVENT_PAIRING_COMPLETED = "pairingCompleted"
         const val EVENT_SIGNAL = "signal"
         const val EVENT_PRESENCE = "devicePresence"
         const val HUB_SIGNAL = "Signal"
+        const val HUB_WATCH = "Watch"
         /** Quick at first, because most drops are a radio waking up. */
         const val FirstRetryMillis = 1_000L
         const val LongestRetryMillis = 30_000L
