@@ -50,7 +50,8 @@ import ch.kalinka.babymonitor.media.microphoneLevel
 @Composable
 fun CheckRoomScreen(onBack: () -> Unit, viewModel: MonitorViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
-    val alarm by viewModel.alarm.collectAsState()
+    // The alarm is raised on the watching phone, so its threshold is the one worth drawing here.
+    val alarmAt by viewModel.watcherThreshold.collectAsState()
 
     // A call owns the camera and the microphone; the check gives way to it.
     val inCall = state !is CallState.Idle && state !is CallState.Failed
@@ -102,7 +103,7 @@ fun CheckRoomScreen(onBack: () -> Unit, viewModel: MonitorViewModel = viewModel(
                         val level by remember { microphoneLevel() }.collectAsState(initial = 0f)
                         NoiseMeter(
                             level = level,
-                            threshold = alarm.threshold,
+                            threshold = alarmAt,
                             arming = 0f,
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
@@ -115,8 +116,12 @@ fun CheckRoomScreen(onBack: () -> Unit, viewModel: MonitorViewModel = viewModel(
             Spacer(Modifier.height(16.dp))
             Text(
                 text = "This is the camera a call uses. Make sure the bed is in the picture, " +
-                    "then clap: the bar on the left shows how loud that reaches the phone. The " +
-                    "line on it is where the noise alarm starts.",
+                    "then clap: the bar on the left shows how loud that reaches the phone. " +
+                    if (alarmAt != null) {
+                        "The line on it is where the watching phone's noise alarm starts."
+                    } else {
+                        "A line showing where the noise alarm starts appears after the first call."
+                    },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

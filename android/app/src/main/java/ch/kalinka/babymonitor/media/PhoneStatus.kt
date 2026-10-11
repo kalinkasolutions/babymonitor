@@ -16,7 +16,13 @@ import kotlinx.serialization.Serializable
  * reading only when it changes, so sending both together would be mostly repetition.
  */
 @Serializable
-data class RoomReport(val status: PhoneStatus? = null, val noise: Float? = null)
+data class RoomReport(
+    val status: PhoneStatus? = null,
+    val noise: Float? = null,
+
+    /** The one thing sent the other way: where the watching phone's alarm starts. */
+    val alarmThreshold: Float? = null
+)
 
 /** How the phone in the room is doing, as it would show in its own status bar. */
 @Serializable

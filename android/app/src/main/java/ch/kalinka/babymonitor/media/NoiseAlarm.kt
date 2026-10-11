@@ -29,21 +29,28 @@ data class NoiseAlarmSettings(
 ) {
     /**
      * How long this loudness has to go on. Falls from [seconds] at the threshold to [Floor] at
-     * full scale, geometrically — so each step louder cuts the wait by the same proportion rather
-     * than by the same number of seconds.
+     * [ShriekLevel], geometrically — so each step louder cuts the wait by the same proportion
+     * rather than by the same number of seconds.
      */
     fun secondsFor(level: Float): Float {
         if (level < threshold) {
             return Float.MAX_VALUE
         }
 
-        val over = ((level - threshold) / (1f - threshold).coerceAtLeast(0.01f)).coerceIn(0f, 1f)
+        val shriek = maxOf(ShriekLevel, threshold + 0.1f)
+        val over = ((level - threshold) / (shriek - threshold)).coerceIn(0f, 1f)
         return seconds * (Floor / seconds).toDouble().pow(over.toDouble()).toFloat()
     }
 
     companion object {
         /** However loud it gets, something has to last this long to be more than a door closing. */
         const val Floor = 2f
+
+        /**
+         * Screaming close to the phone. Full scale is clipping, which a phone microphone hardly
+         * ever reaches, so a curve ending there would never get near [Floor].
+         */
+        const val ShriekLevel = 0.65f
     }
 }
 
@@ -116,7 +123,18 @@ class AlarmSettings(context: Context) {
             putBoolean(WarnOffline, value.warnOffline)
         }
 
+    /**
+     * On the phone in the room: the threshold the phone watching it last sent, so the room check
+     * can draw the line that actually raises the alarm. Null until a call has happened.
+     */
+    var watcherThreshold: Float?
+        get() = if (prefs.contains(WatcherThreshold)) prefs.getFloat(WatcherThreshold, 0f) else null
+        set(value) = prefs.edit {
+            if (value == null) remove(WatcherThreshold) else putFloat(WatcherThreshold, value)
+        }
+
     private companion object {
+        const val WatcherThreshold = "watcherThreshold"
         const val Enabled = "enabled"
         const val Threshold = "threshold"
         const val Seconds = "seconds"

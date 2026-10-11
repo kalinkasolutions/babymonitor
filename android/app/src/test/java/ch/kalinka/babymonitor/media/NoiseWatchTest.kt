@@ -15,12 +15,25 @@ class NoiseWatchTest {
         val settings = NoiseAlarmSettings(threshold = 0.4f, seconds = 25)
 
         val atThreshold = settings.secondsFor(0.4f)
-        val crying = settings.secondsFor(0.7f)
-        val shriek = settings.secondsFor(1f)
+        val crying = settings.secondsFor(0.55f)
+        val shriek = settings.secondsFor(NoiseAlarmSettings.ShriekLevel)
 
         assertEquals(25f, atThreshold, 0.1f)
         assertEquals(NoiseAlarmSettings.Floor, shriek, 0.1f)
         assertTrue("crying should sit between the two, not at either end", crying in 4f..12f)
+    }
+
+    @Test
+    fun `screaming reaches the floor without the microphone clipping`() {
+        assertEquals(NoiseAlarmSettings.Floor, NoiseAlarmSettings().secondsFor(0.7f), 0.1f)
+    }
+
+    @Test
+    fun `a threshold above the shriek level still leaves a curve to climb`() {
+        val settings = NoiseAlarmSettings(threshold = 0.8f, seconds = 25)
+
+        assertEquals(25f, settings.secondsFor(0.8f), 0.1f)
+        assertEquals(NoiseAlarmSettings.Floor, settings.secondsFor(0.9f), 0.1f)
     }
 
     @Test

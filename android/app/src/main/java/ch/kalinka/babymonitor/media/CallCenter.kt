@@ -113,6 +113,11 @@ class CallCenter private constructor(private val context: Context) {
     /** When the room counts as loud enough to wake somebody. */
     val alarm: StateFlow<NoiseAlarmSettings> = _alarm.asStateFlow()
 
+    private val _watcherThreshold = MutableStateFlow(alarmSettings.watcherThreshold)
+
+    /** On the phone in the room: where the alarm of the phone watching it starts, once known. */
+    val watcherThreshold: StateFlow<Float?> = _watcherThreshold.asStateFlow()
+
     private val _path = MutableStateFlow(CallPath.Unknown)
 
     /** Which way the media is going: the WiFi, the internet, or the relay. */
@@ -894,6 +899,19 @@ class CallCenter private constructor(private val context: Context) {
         alarmSettings.current = settings
         _alarm.value = settings
         watch = watch.copy(settings = settings)
+        sendAlarmThreshold()
+    }
+
+    private fun sendAlarmThreshold() {
+        if (isListening()) {
+            link?.send(json.encodeToString(RoomReport(alarmThreshold = _alarm.value.threshold)))
+        }
+    }
+
+    private fun isListening(): Boolean = when (val state = session.state) {
+        is CallState.Negotiating -> state.role == CallRole.Listener
+        is CallState.Live -> state.role == CallRole.Listener
+        else -> false
     }
 
     private fun nameOf(deviceId: String) =
@@ -947,6 +965,10 @@ class CallCenter private constructor(private val context: Context) {
                 _noise.value = it
                 considerAlarm(it)
             }
+            report.alarmThreshold?.let {
+                alarmSettings.watcherThreshold = it
+                _watcherThreshold.value = it
+            }
         }
 
         override fun onPath(path: CallPath) {
@@ -964,6 +986,7 @@ class CallCenter private constructor(private val context: Context) {
          */
         override fun onChannelOpen() {
             link?.send(json.encodeToString(RoomReport(status = status.current)))
+            sendAlarmThreshold()
         }
     }
 

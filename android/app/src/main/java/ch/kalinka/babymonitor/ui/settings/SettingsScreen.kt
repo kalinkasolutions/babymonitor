@@ -218,8 +218,9 @@ private fun NoiseAlarmSettingsBlock(
     )
 
     Text(
-        text = "A shriek still counts after ${NoiseAlarmSettings.Floor.toInt()} seconds, however " +
-            "these are set. Only raised when the sound is off or you are not looking — a room " +
+        text = "Screaming (${(NoiseAlarmSettings.ShriekLevel * 100).toInt()}% and up) counts after " +
+            "${NoiseAlarmSettings.Floor.toInt()} seconds, however these are set. Only raised when " +
+            "the sound is off or you are not looking — a room " +
             "you are already watching needs no notification about being loud.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant

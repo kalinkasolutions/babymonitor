@@ -24,9 +24,8 @@ import androidx.compose.ui.unit.dp
  * keeps working however this end has its volume set.
  */
 @Composable
-fun NoiseMeter(level: Float, threshold: Float, arming: Float, modifier: Modifier = Modifier) {
-    // Eased here as well as at the source, so a burst rises at once and settles gently rather
-    // than flickering between two frames of a voice.
+fun NoiseMeter(level: Float, threshold: Float?, arming: Float, modifier: Modifier = Modifier) {
+    // Eased here, so the readings five times a second glide rather than jump.
     val shown by animateFloatAsState(targetValue = level.coerceIn(0f, 1f), label = "noise")
 
     Canvas(
@@ -44,7 +43,7 @@ fun NoiseMeter(level: Float, threshold: Float, arming: Float, modifier: Modifier
 
         // The line the noise has to stay above to become an alarm. Drawn on the meter itself,
         // because a threshold you cannot see against the thing it measures is just a number.
-        if (threshold in 0.01f..0.99f) {
+        if (threshold != null && threshold in 0.01f..0.99f) {
             val y = size.height * (1f - threshold)
             drawLine(
                 color = Mark,

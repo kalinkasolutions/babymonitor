@@ -39,6 +39,7 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     val peerStatus = calls.peerStatus
     val noise = calls.noise
     val alarm = calls.alarm
+    val watcherThreshold = calls.watcherThreshold
     val arming = calls.arming
     val silent = calls.silent
     val retrying = calls.retrying

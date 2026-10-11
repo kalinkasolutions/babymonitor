@@ -62,6 +62,7 @@ class WebRtcMediaLink(
     private val audioDeviceModule = JavaAudioDeviceModule.builder(context.applicationContext)
         .setUseHardwareAcousticEchoCanceler(false)
         .setUseHardwareNoiseSuppressor(false)
+        .setAudioSource(RoomAudioSource)
         // The only place the microphone can be heard as numbers. WebRTC hands over what it
         // records, never what it plays, so how loud the room is has to be measured at the end
         // that is in it — which is also the end that will one day raise an alarm about it.
@@ -78,8 +79,9 @@ class WebRtcMediaLink(
     private var channel: DataChannel? = null
     private var incomingAudio: AudioTrack? = null
     private var muted = false
-    private var levelSentAt = 0L
-    private var level = 0f
+    private var windowStartedAt = 0L
+    private var windowSumOfSquares = 0.0
+    private var windowSampleCount = 0
 
     init {
         PeerConnectionFactory.initialize(
@@ -212,11 +214,9 @@ class WebRtcMediaLink(
     }
 
     /**
-     * Ten milliseconds of microphone, as loudness. Root mean square rather than a peak, because a
-     * peak is a door closing and the thing worth watching is how loud the room is.
-     *
-     * Reported a few times a second, and eased on the way down: a meter that drops to nothing
-     * between two syllables reads as silence when somebody is talking.
+     * Ten milliseconds of microphone at a time, gathered into one loudness per window. Root mean
+     * square over the whole window rather than a peak or a snapshot, because a peak is a door
+     * closing, and a snapshot can land in the gap between two cries.
      */
     private fun onSamples(samples: JavaAudioDeviceModule.AudioSamples) {
         val data = samples.data
@@ -230,20 +230,18 @@ class WebRtcMediaLink(
             index += 2
         }
 
-        if (count == 0) {
-            return
-        }
-
-        val next = loudnessOf(sum, count)
-        level = if (next > level) next else level + (next - level) * FallRate
+        windowSumOfSquares += sum
+        windowSampleCount += count
 
         val now = System.currentTimeMillis()
-        if (now - levelSentAt < LevelInterval) {
+        if (now - windowStartedAt < LoudnessWindowMillis) {
             return
         }
 
-        levelSentAt = now
-        listener.onAudioLevel(level)
+        listener.onAudioLevel(loudnessOf(windowSumOfSquares, windowSampleCount))
+        windowStartedAt = now
+        windowSumOfSquares = 0.0
+        windowSampleCount = 0
     }
 
     private fun openChannel(opened: DataChannel?) {
@@ -420,9 +418,6 @@ class WebRtcMediaLink(
     private companion object {
         const val StreamId = "babymonitor"
         const val ChannelLabel = "status"
-
-        const val LevelInterval = 200L
-        const val FallRate = 0.25f
     }
 }
 
