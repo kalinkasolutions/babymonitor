@@ -6,9 +6,14 @@ import android.net.nsd.NsdServiceInfo
 import ch.kalinka.babymonitor.log.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -16,6 +21,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
+import kotlin.coroutines.resume
 
 /**
  * Finding the other phone on the same WiFi and handing it a signalling message directly, with no
@@ -53,6 +59,13 @@ class LanSignalling(
     private var registration: NsdManager.RegistrationListener? = null
     private var discovery: NsdManager.DiscoveryListener? = null
 
+    // Android may rename this phone's service on a clash, so the name it was given is kept to
+    // recognise it among what discovery finds.
+    @Volatile
+    private var ownServiceName: String? = null
+    private var toResolve = Channel<NsdServiceInfo>(Channel.UNLIMITED)
+    private var resolver: Job? = null
+
     /** The phones reachable on this network right now. */
     fun reachable(deviceId: String): Boolean = peers.containsKey(deviceId)
 
@@ -67,6 +80,8 @@ class LanSignalling(
             server = socket
             nsd = context.getSystemService(NsdManager::class.java)
             listen(socket)
+            toResolve = Channel(Channel.UNLIMITED)
+            resolver = resolveOneAtATime(toResolve)
             register(device, socket.localPort)
             discover()
             AppLog.i(Tag, "Listening for phones on this network as $device, port ${socket.localPort}")
@@ -78,6 +93,9 @@ class LanSignalling(
         runCatching { registration?.let { nsd?.unregisterService(it) } }
         runCatching { discovery?.let { nsd?.stopServiceDiscovery(it) } }
         runCatching { server?.close() }
+        resolver?.cancel()
+        resolver = null
+        ownServiceName = null
         registration = null
         discovery = null
         server = null
@@ -180,7 +198,9 @@ class LanSignalling(
         }
 
         val listener = object : NsdManager.RegistrationListener {
-            override fun onServiceRegistered(info: NsdServiceInfo) = Unit
+            override fun onServiceRegistered(info: NsdServiceInfo) {
+                ownServiceName = info.serviceName
+            }
             override fun onRegistrationFailed(info: NsdServiceInfo, code: Int) {
                 AppLog.w(Tag, "Could not announce this phone on the network: $code")
             }
@@ -195,7 +215,11 @@ class LanSignalling(
 
     private fun discover() {
         val listener = object : NsdManager.DiscoveryListener {
-            override fun onServiceFound(info: NsdServiceInfo) = resolve(info)
+            override fun onServiceFound(info: NsdServiceInfo) {
+                if (info.serviceName != ownServiceName) {
+                    toResolve.trySend(info)
+                }
+            }
             override fun onServiceLost(info: NsdServiceInfo) {
                 // Keyed by the device id out of the TXT record, which is how it went in. The
                 // service name is "babymonitor" for every phone — matching on it removed nothing,
@@ -226,25 +250,58 @@ class LanSignalling(
         nsd?.discoverServices(ServiceType, NsdManager.PROTOCOL_DNS_SD, listener)
     }
 
+    /**
+     * Looks up found phones one at a time. Many Android versions refuse a second lookup while one
+     * is running, and a phone finds its own service at the same moment as the other phone's — so
+     * resolving both at once lost the other phone for good, and with it every message to it.
+     */
+    private fun resolveOneAtATime(found: Channel<NsdServiceInfo>) = scope.launch {
+        for (info in found) {
+            for (attempt in 1..ResolveAttempts) {
+                // A lookup Android never answers would otherwise hold up every phone found after it.
+                val lookup = withTimeoutOrNull(ResolveTimeout) { resolveOnce(info) } ?: Lookup.NoAnswer
+                if (lookup == Lookup.Found) {
+                    break
+                }
+                AppLog.w(Tag, "Could not look up ${info.serviceName}: $lookup, try $attempt of $ResolveAttempts")
+                delay(ResolveRetryDelay)
+            }
+        }
+    }
+
+    private sealed interface Lookup {
+        data object Found : Lookup
+        data object NoAnswer : Lookup
+        data class Failed(val code: Int) : Lookup
+    }
+
     @Suppress("DEPRECATION")
-    private fun resolve(info: NsdServiceInfo) {
-        nsd?.resolveService(
+    private suspend fun resolveOnce(info: NsdServiceInfo): Lookup = suspendCancellableCoroutine { continuation ->
+        val nsd = nsd ?: return@suspendCancellableCoroutine continuation.resume(Lookup.NoAnswer)
+        nsd.resolveService(
             info,
             object : NsdManager.ResolveListener {
                 override fun onServiceResolved(resolved: NsdServiceInfo) {
-                    val device = resolved.attributes[DeviceAttribute]?.decodeToString() ?: return
-                    if (device == thisDeviceId()) {
-                        return
-                    }
-
-                    val host: InetAddress = resolved.host ?: return
-                    peers[device] = InetSocketAddress(host, resolved.port)
-                    AppLog.i(Tag, "Found $device on this network at ${host.hostAddress}")
+                    remember(resolved)
+                    if (continuation.isActive) continuation.resume(Lookup.Found)
                 }
 
-                override fun onResolveFailed(info: NsdServiceInfo, code: Int) = Unit
+                override fun onResolveFailed(info: NsdServiceInfo, code: Int) {
+                    if (continuation.isActive) continuation.resume(Lookup.Failed(code))
+                }
             }
         )
+    }
+
+    private fun remember(resolved: NsdServiceInfo) {
+        val device = resolved.attributes[DeviceAttribute]?.decodeToString() ?: return
+        if (device == thisDeviceId()) {
+            return
+        }
+
+        val host: InetAddress = resolved.host ?: return
+        peers[device] = InetSocketAddress(host, resolved.port)
+        AppLog.i(Tag, "Found $device on this network at ${host.hostAddress}")
     }
 
     private companion object {
@@ -252,6 +309,9 @@ class LanSignalling(
         const val ServiceType = "_babymonitor._tcp."
         const val DeviceAttribute = "device"
         const val ConnectTimeout = 2_000
+        const val ResolveAttempts = 3
+        const val ResolveRetryDelay = 1_000L
+        const val ResolveTimeout = 5_000L
 
         /** Long enough for a phone on the same WiFi to finish a sentence, short enough to give up on. */
         const val ReadTimeout = 5_000

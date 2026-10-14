@@ -313,7 +313,12 @@ class MonitorService : Service() {
                 .setSilent(true)
                 .build()
 
-            runCatching { notifications.notify(id, notification) }
+            // Without the notification permission the sound below is the whole alarm.
+            try {
+                notifications.notify(id, notification)
+            } catch (e: SecurityException) {
+                AppLog.w(Tag, "Cannot show the alarm notification: not allowed to post notifications", e)
+            }
             startAlarmSound(context)
         }
 

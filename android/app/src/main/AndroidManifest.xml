@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Lets WebRTC bring up mobile data while the WiFi is still connected, so a call has a path
+         ready before the phone walks out of range rather than after. Granted at install. -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <!-- Finding the other phone on the same WiFi and handing it a signalling message directly,
          so two phones in one house keep working when the internet does not. -->
