@@ -333,6 +333,9 @@ class WebRtcMediaLink(
     override fun close() {
         Log.i(MediaTag, "Closing the peer connection")
         incomingAudio = null
+        // Closing the connection still reports the channel's last state change, and reading the
+        // state of a disposed channel from that callback aborts the whole process.
+        channel?.unregisterObserver()
         channel?.dispose()
         channel = null
 
