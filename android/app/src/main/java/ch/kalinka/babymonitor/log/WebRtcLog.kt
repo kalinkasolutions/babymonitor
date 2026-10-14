@@ -8,6 +8,10 @@ import org.webrtc.Logging
  * WebRTC's own log. Taking it over stops WebRTC writing to logcat, so everything still goes there.
  * Only warnings and errors are uploaded, and only a few per source file a minute: one reconnect
  * repeats the same connectivity warning dozens of times.
+ *
+ * Both are uploaded as warnings. WebRTC calls routine things errors — a path that timed out while
+ * the phone changes network, the other end hanging up — and an error in the log is an alert. The
+ * app's own errors are what say a call actually failed.
  */
 object WebRtcLog : Loggable {
     val minimumSeverity = Logging.Severity.LS_INFO
@@ -21,11 +25,7 @@ object WebRtcLog : Loggable {
             return
         }
 
-        if (severity == Logging.Severity.LS_ERROR) {
-            AppLog.e(tag, message)
-        } else {
-            AppLog.w(tag, message)
-        }
+        AppLog.w(tag, message)
     }
 
     private fun priorityOf(severity: Logging.Severity): Int = when (severity) {
