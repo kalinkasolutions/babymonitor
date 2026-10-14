@@ -715,7 +715,13 @@ class CallCenter private constructor(private val context: Context) {
             return SignalResult.Refused("This phone could not sign for itself.")
         }
 
-        return if (lan.send(signed)) SignalResult.Delivered else stream.sendSignal(signed)
+        if (lan.send(signed)) {
+            return SignalResult.Delivered
+        }
+
+        return stream.sendSignal(signed).also {
+            AppLog.d(Tag, "Sent a $kind to $toDeviceId through the server: $it")
+        }
     }
 
     /**
@@ -992,6 +998,9 @@ class CallCenter private constructor(private val context: Context) {
         }
 
         override fun onPath(path: CallPath) {
+            if (path != _path.value) {
+                AppLog.i(Tag, "The call now runs over: $path")
+            }
             _path.value = path
         }
 

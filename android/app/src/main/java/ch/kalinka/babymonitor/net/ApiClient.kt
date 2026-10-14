@@ -3,6 +3,8 @@ package ch.kalinka.babymonitor.net
 import android.content.Context
 import ch.kalinka.babymonitor.device.DeviceIdentity
 import ch.kalinka.babymonitor.log.AppLog
+import ch.kalinka.babymonitor.log.LogLevel
+import ch.kalinka.babymonitor.log.uploadLevelFrom
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -20,7 +22,12 @@ sealed interface ApiResult<out T> {
 }
 
 /** Refused means the server will never take that batch; Failed means try it again later. */
-enum class LogUpload { Sent, Refused, Failed }
+sealed interface LogUpload {
+    /** [level] is what the server wants uploaded from now on; null from a server too old to say. */
+    data class Sent(val level: LogLevel?) : LogUpload
+    data object Refused : LogUpload
+    data object Failed : LogUpload
+}
 
 /** The relay's plain HTTP calls: relay credentials, a check that the settings work, and log upload. */
 class ApiClient(context: Context) {
@@ -66,7 +73,7 @@ class ApiClient(context: Context) {
 
             http.newCall(request).execute().use { response ->
                 when {
-                    response.isSuccessful -> LogUpload.Sent
+                    response.isSuccessful -> LogUpload.Sent(uploadLevelFrom(response.body.string()))
                     response.code == 400 || response.code == 413 -> LogUpload.Refused
                     else -> LogUpload.Failed
                 }

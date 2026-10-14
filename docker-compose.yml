@@ -25,6 +25,9 @@ services:
       # Minimum log level written to the console. One of:
       # Trace, Debug, Information, Warning, Error, Critical. Defaults to Information.
       - Logging__LogLevel__Default=${LOG_LEVEL:-Information}
+      # How much the phones upload, told to them on each upload. Defaults to LOG_LEVEL; Debug or
+      # Verbose adds WebRTC's own lines, which say why a call does or does not connect.
+      - PhoneLogging__Level=${PHONE_LOG_LEVEL:-}
       # Also ships the server's log, and every line the phones upload, to Loki.
       - Loki__Enabled=${LOKI_ENABLED:-false}
       - Loki__Uri=${LOKI_URI:-}
@@ -88,6 +91,7 @@ services:
       --no-stdout-log
       --simple-log
       --log-file=stdout
+      ${TURN_VERBOSE:+--verbose}
 
     # Just "is it answering on 3478": a real STUN exchange needs a credential, and minting one
     # here would mean putting the secret in a second place. Probes the pinned listening address

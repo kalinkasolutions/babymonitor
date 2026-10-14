@@ -8,6 +8,7 @@ import ch.kalinka.babymonitor.net.IceServersDto
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.Camera2Enumerator
+import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.DataChannel
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
@@ -215,6 +216,7 @@ class WebRtcMediaLink(
     }
 
     override fun addRemoteCandidate(candidate: IceCandidateDto) {
+        AppLog.d(MediaTag, "Remote candidate: ${candidate.candidate}")
         connection?.addIceCandidate(
             IceCandidate(candidate.sdpMid, candidate.sdpMLineIndex, candidate.candidate)
         )
@@ -380,6 +382,7 @@ class WebRtcMediaLink(
 
     private inner class Observer : PeerConnection.Observer {
         override fun onIceCandidate(candidate: IceCandidate) {
+            AppLog.d(MediaTag, "Local candidate: ${candidate.sdp}")
             listener.onLocalCandidate(
                 IceCandidateDto(candidate.sdpMid, candidate.sdpMLineIndex, candidate.sdp)
             )
@@ -413,9 +416,22 @@ class WebRtcMediaLink(
         }
 
         override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
-        override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) = Unit
-        override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
-        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) = Unit
+        override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
+            AppLog.d(MediaTag, "ICE is now $state")
+        }
+
+        override fun onIceConnectionReceivingChange(receiving: Boolean) {
+            AppLog.d(MediaTag, if (receiving) "Receiving from the other phone again" else "Nothing received from the other phone for a while")
+        }
+
+        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
+            AppLog.d(MediaTag, "Gathering candidates is now $state")
+        }
+
+        // Which pair of addresses the call actually runs on: the one answer to "why this path".
+        override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {
+            AppLog.i(MediaTag, "Using ${event.local?.sdp} <-> ${event.remote?.sdp} (${event.reason})")
+        }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) = Unit
         override fun onAddStream(stream: MediaStream?) = Unit
         override fun onRemoveStream(stream: MediaStream?) = Unit

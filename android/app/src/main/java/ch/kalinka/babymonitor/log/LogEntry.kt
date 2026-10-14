@@ -20,11 +20,23 @@ private val json = Json { explicitNulls = false }
 
 fun encodeLogEntry(entry: LogEntry): String = json.encodeToString(entry)
 
-/** A line cut short by a crash mid-write does not parse; it is left out rather than spoil the batch. */
-fun logUploadBody(appVersion: String, lines: List<String>): String =
+/**
+ * The lines at [minimum] or above. A line cut short by a crash mid-write does not parse; it is left
+ * out rather than spoil the batch.
+ */
+fun logUploadBody(appVersion: String, lines: List<String>, minimum: LogLevel = LogLevel.Verbose): String =
     json.encodeToString(
         LogUploadBody(
             appVersion = appVersion,
-            entries = lines.mapNotNull { runCatching { json.decodeFromString<LogEntry>(it) }.getOrNull() }
+            entries = lines
+                .mapNotNull { runCatching { json.decodeFromString<LogEntry>(it) }.getOrNull() }
+                .filter { (LogLevel.named(it.level) ?: LogLevel.Info) >= minimum }
         )
     )
+
+@Serializable
+private data class LogUploadReply(val level: String? = null)
+
+/** The level the server wants from now on, or null from a server too old to say. */
+fun uploadLevelFrom(reply: String): LogLevel? =
+    runCatching { LogLevel.named(json.decodeFromString<LogUploadReply>(reply).level) }.getOrNull()

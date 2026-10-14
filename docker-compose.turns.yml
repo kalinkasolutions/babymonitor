@@ -49,6 +49,7 @@ services:
       --no-stdout-log
       --simple-log
       --log-file=stdout
+      ${TURN_VERBOSE:+--verbose}
 
     volumes:
       - ${TLS_CERT_PATH:?set TLS_CERT_PATH}:/etc/coturn/tls.crt:ro

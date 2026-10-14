@@ -52,6 +52,7 @@ class LogOutbox(directory: File, private val maxBytes: Long = DefaultMaxBytes) {
         if (sending.exists()) sending.readLines().filter { it.isNotBlank() } else emptyList()
 
     private companion object {
-        const val DefaultMaxBytes = 1_000_000L
+        // Room for a few minutes of WebRTC's own lines while debugging, uploaded or not.
+        const val DefaultMaxBytes = 5_000_000L
     }
 }

@@ -225,6 +225,17 @@ Then turn on **Settings → Always use the relay** in the app and watch the icon
 | The room stays dark on video | the phone in the room lacks "display over other apps" |
 | "App was denied access" when allowing "display over other apps" | Android restricts that permission for an APK installed from a browser or file manager. Settings → Apps → Babymonitor → ⋮ → **Allow restricted settings**, then turn it on again. The ⋮ entry appears only after the first refusal, and not at all with Advanced Protection on |
 
+To see why a call does or does not connect, turn up the logging in `.env` and run
+`docker compose up -d`. The phones pick up the new level with their next log upload, and use it
+from the next call on:
+
+```bash
+PHONE_LOG_LEVEL=Debug    # WebRTC's candidates and pair checks from both phones; Verbose for everything
+TURN_VERBOSE=true        # coturn logs every allocation, permission and refusal
+```
+
+Both are a lot of lines, so set them back once you know.
+
 coturn reads its certificate once at startup, so give the renewal a hook:
 
 ```bash

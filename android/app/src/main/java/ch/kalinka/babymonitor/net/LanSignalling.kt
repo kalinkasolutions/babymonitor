@@ -120,9 +120,11 @@ class LanSignalling(
                     writer.flush()
                 }
             }
+            AppLog.d(Tag, "Handed a ${message.kind} to ${message.toDeviceId} at $address directly")
             true
         }.getOrElse {
             // Gone from the network without saying so; the server is the fallback for that.
+            AppLog.i(Tag, "Could not hand a ${message.kind} to ${message.toDeviceId} at $address directly: $it")
             peers.remove(message.toDeviceId)
             false
         }

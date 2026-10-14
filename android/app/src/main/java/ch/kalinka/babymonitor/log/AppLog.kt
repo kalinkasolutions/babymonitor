@@ -3,6 +3,7 @@ package ch.kalinka.babymonitor.log
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Build
 import android.util.Log
 import androidx.core.content.edit
@@ -21,46 +22,87 @@ import kotlin.system.exitProcess
 /**
  * The app's log: written to logcat as before, and also uploaded to the server so it ends up in
  * Loki next to the server's own. Lines written before [start] only reach logcat.
+ *
+ * How much is uploaded is the server's call: every upload's reply names the lowest level it wants,
+ * so turning on debugging needs a setting on the server and no new app.
  */
 object AppLog {
     private const val Tag = "AppLog"
     private const val FirstUploadDelayMillis = 5_000L
     private const val UploadIntervalMillis = 30_000L
+    private const val DebugUploadIntervalMillis = 10_000L
     private const val MaxLinesPerUpload = 500
+    private const val MaxUploadsPerRound = 5
     private const val LastExitReported = "lastExitReported"
+    private const val UploadLevel = "uploadLevel"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile
     private var outbox: LogOutbox? = null
 
+    @Volatile
+    private var prefs: SharedPreferences? = null
+
+    /** The lowest level uploaded. Kept across restarts, so a debug session covers the first call too. */
+    @Volatile
+    var uploadLevel: LogLevel = LogLevel.Info
+        private set
+
+    val isDebugging: Boolean
+        get() = uploadLevel <= LogLevel.Debug
+
+    fun v(tag: String, message: String) {
+        Log.v(tag, message)
+        record(LogLevel.Verbose, tag, message)
+    }
+
+    fun d(tag: String, message: String, error: Throwable? = null) {
+        Log.d(tag, message, error)
+        record(LogLevel.Debug, tag, message, error)
+    }
+
     fun i(tag: String, message: String, error: Throwable? = null) {
         Log.i(tag, message, error)
-        keep("Info", tag, message, error)
+        record(LogLevel.Info, tag, message, error)
     }
 
     fun w(tag: String, message: String, error: Throwable? = null) {
         Log.w(tag, message, error)
-        keep("Warn", tag, message, error)
+        record(LogLevel.Warn, tag, message, error)
     }
 
     fun e(tag: String, message: String, error: Throwable? = null) {
         Log.e(tag, message, error)
-        keep("Error", tag, message, error)
+        record(LogLevel.Error, tag, message, error)
     }
 
     fun start(context: Context) {
+        val prefs = context.getSharedPreferences("log", Context.MODE_PRIVATE)
+        this.prefs = prefs
+        uploadLevel = LogLevel.named(prefs.getString(UploadLevel, null)) ?: LogLevel.Info
         outbox = LogOutbox(File(context.filesDir, "logs"))
         catchCrashes()
         reportLastExit(context)
         uploadForever(ApiClient(context))
     }
 
-    // Disk full or the like: losing a log line must never take the app down with it.
-    private fun keep(level: String, tag: String, message: String, error: Throwable?) {
+    /**
+     * Keeps a line for upload without writing it to logcat, for callers that already did. Info and
+     * above are always kept and only filtered when uploaded: they are what carries the server's
+     * answer back, and without them a phone set to warnings would never hear it change.
+     */
+    fun record(level: LogLevel, tag: String, message: String, error: Throwable? = null) {
+        if (level < minOf(uploadLevel, LogLevel.Info)) {
+            return
+        }
+
+        // Disk full or the like: losing a log line must never take the app down with it.
         val outbox = outbox ?: return
         runCatching {
-            outbox.append(encodeLogEntry(LogEntry(Instant.now().toString(), level, tag, message, error?.stackTraceToString())))
+            outbox.append(
+                encodeLogEntry(LogEntry(Instant.now().toString(), level.wireName, tag, message, error?.stackTraceToString()))
+            )
         }
     }
 
@@ -69,7 +111,7 @@ object AppLog {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             // Android's own handler, called next, already puts the crash in logcat.
-            keep("Fatal", "Crash", "Uncaught on thread ${thread.name}", error)
+            record(LogLevel.Fatal, "Crash", "Uncaught on thread ${thread.name}", error)
             if (previous != null) {
                 previous.uncaughtException(thread, error)
             } else {
@@ -89,7 +131,7 @@ object AppLog {
 
         val activityManager = context.getSystemService(ActivityManager::class.java)
         val last = activityManager.getHistoricalProcessExitReasons(context.packageName, 0, 1).firstOrNull() ?: return
-        val prefs = context.getSharedPreferences("log", Context.MODE_PRIVATE)
+        val prefs = prefs ?: return
         if (last.timestamp <= prefs.getLong(LastExitReported, 0)) {
             return
         }
@@ -118,6 +160,7 @@ object AppLog {
         ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "a dependency died"
         ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "too much resource use"
         ApplicationExitInfo.REASON_OTHER -> "killed by the system"
+        ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "the app was updated"
         else -> "reason $reason"
     }
 
@@ -126,11 +169,12 @@ object AppLog {
             delay(FirstUploadDelayMillis)
             while (true) {
                 upload(api)
-                delay(UploadIntervalMillis)
+                delay(if (isDebugging) DebugUploadIntervalMillis else UploadIntervalMillis)
             }
         }
     }
 
+    // Several batches a round, so a debug session's flood of WebRTC lines does not fall behind.
     private suspend fun upload(api: ApiClient) {
         val outbox = outbox ?: return
         // Without a server there is nowhere to send them, and no reason to keep them.
@@ -139,15 +183,32 @@ object AppLog {
             return
         }
 
-        val batch = outbox.nextBatch().take(MaxLinesPerUpload)
-        if (batch.isEmpty()) {
+        repeat(MaxUploadsPerRound) {
+            val batch = outbox.nextBatch().take(MaxLinesPerUpload)
+            if (batch.isEmpty()) {
+                return
+            }
+
+            when (val result = api.uploadLogs(logUploadBody(BuildConfig.VERSION_NAME, batch, uploadLevel))) {
+                is LogUpload.Sent -> {
+                    outbox.markSent(batch.size)
+                    result.level?.let(::useLevel)
+                }
+
+                // A refused batch would be refused again, so it is dropped rather than retried forever.
+                LogUpload.Refused -> outbox.markSent(batch.size)
+                LogUpload.Failed -> return
+            }
+        }
+    }
+
+    private fun useLevel(level: LogLevel) {
+        if (level == uploadLevel) {
             return
         }
 
-        when (api.uploadLogs(logUploadBody(BuildConfig.VERSION_NAME, batch))) {
-            // A refused batch would be refused again, so it is dropped rather than retried forever.
-            LogUpload.Sent, LogUpload.Refused -> outbox.markSent(batch.size)
-            LogUpload.Failed -> Unit
-        }
+        uploadLevel = level
+        prefs?.edit { putString(UploadLevel, level.wireName) }
+        i(Tag, "The server asks for ${level.wireName} and above from now on")
     }
 }

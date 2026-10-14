@@ -23,6 +23,8 @@ builder.Host.UseSerilog((_, configuration) =>
         .MinimumLevel.Is(minimumLevel)
         .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
         .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)
+        // The phones filter their own lines by the level they are told, so all of it is kept here.
+        .MinimumLevel.Override("Phone", LogEventLevel.Verbose)
         .Enrich.FromLogContext()
         .Enrich.WithProperty("ServiceName", "Babymonitor")
         .WriteTo.Console();
@@ -36,7 +38,7 @@ builder.Host.UseSerilog((_, configuration) =>
                 new LokiLabel { Key = "app", Value = "babymonitor" },
                 new LokiLabel { Key = "env", Value = builder.Environment.EnvironmentName }
             ],
-            restrictedToMinimumLevel: LogEventLevel.Information);
+            restrictedToMinimumLevel: LogEventLevel.Verbose);
     }
 });
 
