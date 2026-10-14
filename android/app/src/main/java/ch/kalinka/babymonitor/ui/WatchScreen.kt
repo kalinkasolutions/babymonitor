@@ -83,6 +83,7 @@ fun WatchScreen(
     arming: Float,
     silent: Boolean,
     retrying: Boolean,
+    offline: Boolean,
     path: CallPath,
     muted: Boolean,
     video: Boolean,
@@ -137,8 +138,10 @@ fun WatchScreen(
         if (silent || retrying) {
             Text(
                 text = when {
+                    // This phone's own network first: otherwise the room gets the blame for it.
+                    offline -> "This phone is offline. Check WiFi or mobile data."
                     retrying -> "Lost the room. Trying again."
-                    else -> "Not answering. Nothing from this phone for a while."
+                    else -> "Nothing heard from $peerName for a while."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,

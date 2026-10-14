@@ -129,13 +129,11 @@ private fun DeviceCard(row: DeviceRow, onRemove: () -> Unit) {
                     text = if (row.isThisPhone) "${row.phone.name} (this phone)" else row.phone.name,
                     style = MaterialTheme.typography.titleMedium
                 )
-                if (!row.isThisPhone) {
-                    Text(
-                        text = if (row.online) "Ready" else "Not reachable. Open the app on it.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = row.status,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "key ${fingerprintOf(row.phone.publicKey)}",

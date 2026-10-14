@@ -342,5 +342,6 @@ data class CallSession(
 
         const val Busy = "That phone is already in a call."
         const val Refused = "That phone has not confirmed this one's key."
+        const val NotArmed = "That phone is not set up as a monitor."
     }
 }

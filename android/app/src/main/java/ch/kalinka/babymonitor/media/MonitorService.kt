@@ -43,6 +43,9 @@ class MonitorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ActionStop) {
             AppLog.i(Tag, "Stopped from the notification; this phone is off duty")
+            // Through the call centre rather than stopSelf alone, so a call running on this
+            // phone ends too and the screen stops saying it is the monitor.
+            CallCenter.of(applicationContext).standDown()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -56,6 +59,7 @@ class MonitorService : Service() {
 
         AppLog.i(Tag, "On duty: holding the process up for the camera and the microphone")
         isRunning = true
+        running = this
 
         createChannel()
         val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
@@ -73,6 +77,7 @@ class MonitorService : Service() {
     override fun onDestroy() {
         AppLog.i(Tag, "Off duty")
         isRunning = false
+        running = null
         stopAlarmSound()
 
         // The light is this phone's screen, and it must never outlive the reason it was on.
@@ -97,7 +102,7 @@ class MonitorService : Service() {
 
         return NotificationCompat.Builder(this, ChannelId)
             .setContentTitle("Babymonitor is on")
-            .setContentText("This phone can be listened to and watched.")
+            .setContentText(description)
             .setSmallIcon(R.drawable.ic_monitor)
             .setContentIntent(open)
             .addAction(0, "Stop", stop)
@@ -119,6 +124,10 @@ class MonitorService : Service() {
     }
 
     companion object {
+        // The live instance, so its notification can be rebuilt with a new line.
+        @Volatile
+        private var running: MonitorService? = null
+
         /** Whether the process is currently held up by this service. */
         @Volatile
         var isRunning: Boolean = false
@@ -326,13 +335,34 @@ class MonitorService : Service() {
          * The room has stopped answering. The important one: a monitor that has died is silent in
          * exactly the way a sleeping baby is, and nothing else will tell you which you have.
          */
-        fun lostAlarm(context: Context, room: String) {
+        fun lostAlarm(context: Context, room: String, thisPhoneOffline: Boolean) {
             raise(
                 context,
                 id = LostNotificationId,
-                title = "Lost the room",
-                text = "$room stopped answering. It may be off, asleep or out of signal."
+                title = if (thisPhoneOffline) "This phone is offline" else "Lost the room",
+                text = if (thisPhoneOffline) {
+                    "It cannot hear $room. Check WiFi or mobile data on this phone."
+                } else {
+                    "$room stopped answering. It may be off, asleep or out of signal."
+                }
             )
+        }
+
+        @Volatile
+        private var description = "This phone can be listened to and watched."
+
+        /** Changes what the ongoing notification says, if it is up; otherwise kept for when it is. */
+        fun describe(context: Context, line: String) {
+            if (line == description) {
+                return
+            }
+            description = line
+            val service = running ?: return
+            try {
+                NotificationManagerCompat.from(context).notify(NotificationId, service.notification())
+            } catch (_: SecurityException) {
+                // Not allowed to post: the line is kept for the next time it can be shown.
+            }
         }
 
         /**

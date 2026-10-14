@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.kalinka.babymonitor.device.Phone
+import ch.kalinka.babymonitor.device.Reachability
 import ch.kalinka.babymonitor.media.CallRole
 import ch.kalinka.babymonitor.media.CallState
 import ch.kalinka.babymonitor.media.MonitorViewModel
@@ -80,6 +81,8 @@ fun MonitorScreen(
     val retrying by viewModel.retrying.collectAsState()
     val path by viewModel.path.collectAsState()
     val keepScreenOn by viewModel.keepScreenOn.collectAsState()
+    val availability by viewModel.availability.collectAsState()
+    val offline by viewModel.offline.collectAsState()
 
     // Remembered across a drop, so a call being re-established keeps its screen instead of
     // bouncing back to the list and losing what was on it.
@@ -120,6 +123,7 @@ fun MonitorScreen(
             arming = arming,
             silent = silent,
             retrying = retrying,
+            offline = offline,
             path = path,
             muted = muted,
             video = video,
@@ -143,9 +147,17 @@ fun MonitorScreen(
             .verticalScroll(rememberScrollState())
             .padding(24.dp)
     ) {
-        // Only when something is happening. Idle needs no announcement; it needs instructions.
-        if (state !is CallState.Idle) {
+        // Only when something is happening. Idle needs no announcement; it needs instructions. A
+        // failure is said once: as the message if there is one, which usually carries more.
+        val showState = state !is CallState.Idle && !(state is CallState.Failed && message != null)
+        if (showState) {
             CallStateLine(state, others)
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // The way out of what is happening sits with it, named for what it ends.
+        stopLabel(state, others)?.let { label ->
+            Button(onClick = viewModel::hangUp) { Text(label) }
             Spacer(Modifier.height(16.dp))
         }
 
@@ -225,6 +237,11 @@ fun MonitorScreen(
             )
         }
 
+        // Picking a phone to watch only makes sense while this one is doing nothing else.
+        if (state !is CallState.Idle && state !is CallState.Failed) {
+            return@Column
+        }
+
         Text(
             text = "Watch another phone",
             style = MaterialTheme.typography.titleMedium
@@ -248,23 +265,31 @@ fun MonitorScreen(
         )
         Spacer(Modifier.height(12.dp))
 
-        if (state is CallState.Idle || state is CallState.Failed) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                for (device in others) {
-                    ListenRow(
-                        device = device,
-                        online = device.id in online,
-                        onListen = { viewModel.listenTo(device.id, video = !startWithVideoOff) },
-                        onWatch = { viewModel.listenTo(device.id, video = true) }
-                    )
-                }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            for (device in others) {
+                ListenRow(
+                    device = device,
+                    reachability = Reachability.of(device.id in online, availability[device.id]),
+                    onListen = { viewModel.listenTo(device.id, video = !startWithVideoOff) },
+                    onWatch = { viewModel.listenTo(device.id, video = true) }
+                )
             }
-        } else {
-            Button(onClick = viewModel::hangUp) { Text("Stop") }
         }
+    }
+}
+
+/** What the button that ends the call says, or null when there is no call to end. */
+private fun stopLabel(state: CallState, others: List<Phone>): String? {
+    fun nameOf(deviceId: String) = others.firstOrNull { it.id == deviceId }?.name ?: "the other phone"
+
+    return when (state) {
+        is CallState.Asking -> "Cancel"
+        is CallState.Negotiating -> if (state.role == CallRole.Speaker) "Stop sending to ${nameOf(state.peerDeviceId)}" else "Cancel"
+        is CallState.Live -> if (state.role == CallRole.Speaker) "Stop sending to ${nameOf(state.peerDeviceId)}" else "Stop watching"
+        else -> null
     }
 }
 
@@ -324,10 +349,11 @@ private fun Step(
 @Composable
 private fun ListenRow(
     device: Phone,
-    online: Boolean,
+    reachability: Reachability,
     onListen: () -> Unit,
     onWatch: () -> Unit
 ) {
+    val online = reachability.canBeWatched
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -354,7 +380,7 @@ private fun ListenRow(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = if (online) "Ready" else "Not reachable. Open the app on it.",
+                        text = reachability.line(device.name),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

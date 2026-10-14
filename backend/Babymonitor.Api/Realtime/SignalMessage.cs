@@ -35,6 +35,9 @@ public static class SignalKinds
     /// <summary>"I scanned your screen", sent before the receiver trusts the sender's key.</summary>
     public const string Pair = "pair";
 
+    /// <summary>Whether a phone is set up as the monitor, and whether it is in a call.</summary>
+    public const string Availability = "availability";
+
     public static bool IsKnown(string? kind) =>
-        kind is Start or Offer or Answer or Candidate or Stop or Light or Quality or Video or Pair;
+        kind is Start or Offer or Answer or Candidate or Stop or Light or Quality or Video or Pair or Availability;
 }

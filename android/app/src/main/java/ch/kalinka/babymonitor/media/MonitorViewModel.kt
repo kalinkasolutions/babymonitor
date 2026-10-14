@@ -46,6 +46,8 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     val path = calls.path
     val startWithVideoOff = calls.startWithVideoOff
     val keepScreenOn = calls.keepScreenOn
+    val availability = calls.availability
+    val offline = calls.offline
 
     fun askForLight(mode: LightMode, brightness: Float, seconds: Int = 0) =
         calls.askForLight(mode, brightness, seconds)

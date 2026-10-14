@@ -88,7 +88,18 @@ object SignalKinds {
      * what makes that safe.
      */
     const val Pair = "pair"
+
+    /**
+     * "This is what I am up to": set up as the monitor or not, in a call or not. Sent to the paired
+     * phones whenever either changes and whenever one of them comes online, so a phone that cannot
+     * be watched says so before anybody tries.
+     */
+    const val Availability = "availability"
 }
+
+/** What a phone says about itself. A phone too old to say anything is taken as available. */
+@Serializable
+data class Availability(val armed: Boolean = true, val busy: Boolean = false)
 
 /**
  * What colour the phone in the nursery should make its screen. It has no infrared, so a dark room

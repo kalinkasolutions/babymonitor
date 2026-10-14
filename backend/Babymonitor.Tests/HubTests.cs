@@ -93,6 +93,18 @@ public sealed class HubTests : IClassFixture<BabymonitorApp>, IAsyncLifetime
     }
 
     [Fact]
+    public async Task AnAvailabilitySignalIsCarried()
+    {
+        var (_, sender) = await ConnectNewPhoneAsync();
+        var (receiverPhone, receiver) = await ConnectNewPhoneAsync();
+        var signals = Listen(receiver, "signal");
+
+        Assert.True(await SignalAsync(sender, receiverPhone.DeviceId, "availability"));
+        var signal = await NextAsync(signals);
+        Assert.Equal("availability", signal.GetProperty("kind").GetString());
+    }
+
+    [Fact]
     public async Task ASignalOfAnUnknownKindIsRefused()
     {
         var (_, sender) = await ConnectNewPhoneAsync();

@@ -3,6 +3,8 @@ package ch.kalinka.babymonitor.media
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import androidx.core.content.ContextCompat
 import ch.kalinka.babymonitor.device.Household
@@ -10,6 +12,7 @@ import ch.kalinka.babymonitor.device.Phone
 import ch.kalinka.babymonitor.log.AppLog
 import ch.kalinka.babymonitor.net.ApiClient
 import ch.kalinka.babymonitor.net.ApiResult
+import ch.kalinka.babymonitor.net.Availability
 import ch.kalinka.babymonitor.net.CallRequest
 import ch.kalinka.babymonitor.net.DeviceEvent
 import ch.kalinka.babymonitor.net.DeviceStream
@@ -169,6 +172,22 @@ class CallCenter private constructor(private val context: Context) {
     private val _remoteVideo = MutableStateFlow<VideoTrack?>(null)
     val remoteVideo: StateFlow<VideoTrack?> = _remoteVideo.asStateFlow()
 
+    private val _availability = MutableStateFlow<Map<String, Availability>>(emptyMap())
+
+    /** What each paired phone last said about itself. Missing for one that has not said yet. */
+    val availability: StateFlow<Map<String, Availability>> = _availability.asStateFlow()
+
+    private val _offline = MutableStateFlow(false)
+
+    /**
+     * This phone has no network at all. Then a room that stops answering is this phone's doing,
+     * and saying the room went quiet would send somebody to the wrong phone.
+     */
+    val offline: StateFlow<Boolean> = _offline.asStateFlow()
+
+    // What this phone last told the others, so it says it again only when it changes.
+    private var announced: Availability? = null
+
     private val _armed = MutableStateFlow(MonitorService.isRunning)
     val armed: StateFlow<Boolean> = _armed.asStateFlow()
 
@@ -222,6 +241,21 @@ class CallCenter private constructor(private val context: Context) {
     init {
         load()
         listen()
+        watchOwnNetwork()
+    }
+
+    private fun watchOwnNetwork() {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java) ?: return
+        _offline.value = connectivity.activeNetwork == null
+        connectivity.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                _offline.value = false
+            }
+
+            override fun onLost(network: Network) {
+                _offline.value = connectivity.activeNetwork == null
+            }
+        })
     }
 
     fun refresh() = load()
@@ -316,11 +350,28 @@ class CallCenter private constructor(private val context: Context) {
         if (!_armed.value) {
             _message.value = "This phone could not go on duty. Open the app and try again."
         }
+        announceIfChanged()
+        describeDuty()
     }
 
+    /** No longer the monitor: whoever is watching it is cut off too, or it would keep sending. */
     fun disarm() {
+        if ((_state.value as? CallState.Live)?.role == CallRole.Speaker ||
+            (_state.value as? CallState.Negotiating)?.role == CallRole.Speaker
+        ) {
+            hangUp()
+        }
         MonitorService.disarm(context)
         _armed.value = false
+        announceIfChanged()
+    }
+
+    /** "Stop" in the notification: off duty, and no call left running behind it. */
+    fun standDown() {
+        if (session.isBusy) {
+            hangUp()
+        }
+        disarm()
     }
 
     fun hasMicrophonePermission(): Boolean = granted(Manifest.permission.RECORD_AUDIO)
@@ -384,10 +435,53 @@ class CallCenter private constructor(private val context: Context) {
     }
 
     private fun updateOnline() {
+        val before = _online.value
         _online.value = _others.value
             .filter { lan.reachable(it.id) || it.id in onRelay }
             .map { it.id }
             .toSet()
+
+        // A phone that just appeared has no idea what this one is up to yet.
+        val arrived = _online.value - before
+        if (arrived.isNotEmpty()) {
+            announce(arrived)
+        }
+    }
+
+    private fun currentAvailability() = Availability(armed = _armed.value, busy = session.isBusy)
+
+    /** Tells the others what this phone is up to, when that changed since it last said so. */
+    private fun announceIfChanged() {
+        val now = currentAvailability()
+        if (now != announced) {
+            announced = now
+            announce(_online.value)
+        }
+    }
+
+    private fun announce(to: Set<String>) {
+        val body = json.encodeToString(currentAvailability())
+        scope.launch {
+            for (deviceId in to) {
+                send(deviceId, SignalKinds.Availability, body)
+            }
+        }
+    }
+
+    /** The foreground notification, saying what this phone is actually doing. */
+    private fun describeDuty() {
+        val line = when (val current = _state.value) {
+            is CallState.Asking -> "Listening to ${nameOf(current.peerDeviceId)}."
+            is CallState.Negotiating -> dutyLine(current.peerDeviceId, current.role)
+            is CallState.Live -> dutyLine(current.peerDeviceId, current.role)
+            else -> "This phone can be listened to and watched."
+        }
+        MonitorService.describe(context, line)
+    }
+
+    private fun dutyLine(peerDeviceId: String, role: CallRole) = when (role) {
+        CallRole.Listener -> "Listening to ${nameOf(peerDeviceId)}."
+        CallRole.Speaker -> "${nameOf(peerDeviceId)} is watching this phone."
     }
 
     private fun listen() {
@@ -475,6 +569,17 @@ class CallCenter private constructor(private val context: Context) {
         val from = signal.fromDeviceId
         when (signal.kind) {
             SignalKinds.Start -> {
+                // Only a phone somebody set up as the monitor sends. One that was not would film
+                // only while its screen happens to be on, which is worse than saying no.
+                if (!_armed.value) {
+                    AppLog.i(Tag, "$from asked to watch, but this phone is not set up as the monitor")
+                    _message.value = "${nameOf(from)} tried to watch this phone. Turn on " +
+                        "“Use this phone as the monitor” to allow it."
+                    scope.launch { send(from, SignalKinds.Stop, CallSession.NotArmed) }
+                    announce(setOf(from))
+                    return
+                }
+
                 val request = runCatching { json.decodeFromString<CallRequest>(signal.body) }
                     .getOrDefault(CallRequest())
                 dispatch(
@@ -523,13 +628,23 @@ class CallCenter private constructor(private val context: Context) {
                 val reason = signal.body.takeIf { it.isNotBlank() }
                 reason?.let { _message.value = it }
 
-                // No reason is somebody at that phone pressing Stop. Calling it straight back
-                // would undo what they just did, so this phone stops wanting it.
-                if (reason == null && wanted?.first == from) {
+                // No reason is somebody at that phone pressing Stop, and a phone that is not set up
+                // as the monitor will say no again. Calling back would undo the one and annoy
+                // with the other, so this phone stops wanting it.
+                val notArmed = reason == CallSession.NotArmed
+                if ((reason == null || notArmed) && wanted?.first == from) {
                     AppLog.i(Tag, "$from stopped the call; not calling it back")
                     wanted = null
                     stopRedialling()
-                    _message.value = "${nameOf(from)} stopped the call."
+                    _message.value = if (notArmed) {
+                        "${nameOf(from)} is not set up as a monitor. Turn on " +
+                            "“Use this phone as the monitor” on it."
+                    } else {
+                        "${nameOf(from)} stopped the call."
+                    }
+                }
+                if (notArmed) {
+                    _availability.value += from to Availability(armed = false)
                 }
 
                 dispatch(CallEvent.Stopped(from))
@@ -537,6 +652,9 @@ class CallCenter private constructor(private val context: Context) {
 
             // Pairing again with a phone that is already paired: still worth showing on screen.
             SignalKinds.Pair -> _pairings.tryEmit(signal)
+
+            SignalKinds.Availability -> runCatching { json.decodeFromString<Availability>(signal.body) }
+                .onSuccess { _availability.value += from to it }
         }
     }
 
@@ -614,6 +732,8 @@ class CallCenter private constructor(private val context: Context) {
             }
 
             holdTheProcess()
+            announceIfChanged()
+            describeDuty()
         }
     }
 
@@ -884,7 +1004,7 @@ class CallCenter private constructor(private val context: Context) {
         _silent.value = true
         AppLog.w(Tag, "Lost the room: the call ended without being stopped")
         if (_alarm.value.warnOffline) {
-            MonitorService.lostAlarm(context, nameOf(peerDeviceId))
+            MonitorService.lostAlarm(context, nameOf(peerDeviceId), thisPhoneOffline = _offline.value)
         }
     }
 
