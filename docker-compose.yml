@@ -7,7 +7,7 @@ services:
     # Set APP_BIND_ADDRESS to 0.0.0.0 only when nginx is on another machine, and then name that
     # machine in PROXY_TRUSTED rather than leaving PROXY_TRUST_ANY on.
     ports:
-      - "${APP_BIND_ADDRESS:-127.0.0.1}:7881:5001"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-7881}:5001"
     restart: always
     environment:
       - ASPNETCORE_URLS=http://+:5001
@@ -58,22 +58,42 @@ services:
     # userland proxy process per port in the relay range.
     network_mode: host
 
-    # The secret arrives on the command line from the environment, so turnserver.conf holds no
-    # credentials and can be committed as it stands.
+    # Every setting is a flag here, so this file and .env are the whole installation. Nothing in
+    # it is a credential: the secret comes from the environment.
+    # --no-tcp-relay because WebRTC only ever relays UDP, and a TCP relay is a way into the network.
     command: >
-      -c /etc/coturn/turnserver.conf
       --realm=${TURN_HOST}
       --server-name=${TURN_HOST}
       --listening-ip=${TURN_LISTENING_IP}
+      ${TURN_EXTERNAL_IP:+--external-ip=$TURN_EXTERNAL_IP}
+      --listening-port=3478
+      --min-port=49160
+      --max-port=49200
+      --use-auth-secret
+      --no-tcp-relay
       --static-auth-secret=${TURN_SECRET:?set TURN_SECRET in .env}
       --no-tls
       --no-dtls
+      --no-multicast-peers
+      --denied-peer-ip=0.0.0.0-0.255.255.255
+      --denied-peer-ip=10.0.0.0-10.255.255.255
+      --denied-peer-ip=127.0.0.0-127.255.255.255
+      --denied-peer-ip=169.254.0.0-169.254.255.255
+      --denied-peer-ip=172.16.0.0-172.31.255.255
+      --denied-peer-ip=192.168.0.0-192.168.255.255
+      --denied-peer-ip=::1
+      --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
       ${TURN_TEST_PEERS:+--allowed-peer-ip=$TURN_TEST_PEERS}
-
-    # No certificate here. TLS for the relay is terminated by the proxy that already has one,
-    # which forwards the plain TCP to 3478 — see docker-compose.turns.yml for the other way round.
-    volumes:
-      - ./deploy/turn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      --user-quota=12
+      --total-quota=100
+      --max-bps=256000
+      --stale-nonce=600
+      --fingerprint
+      --no-cli
+      --no-stdout-log
+      --simple-log
+      --log-file=stdout
 
     # Just "is it answering on 3478": a real STUN exchange needs a credential, and minting one
     # here would mean putting the secret in a second place. Probes the pinned listening address
@@ -85,8 +105,9 @@ services:
       retries: 3
       start_period: 15s
 
-  # The home relay: like the one above, but it may reach this house's own network, so a phone
-  # outside can reach one on the home WiFi. Only started with COMPOSE_PROFILES=home-relay.
+  # The home relay: like the one above, with its own ports and secret, but it may reach this
+  # house's own network. That lets a phone outside reach one on the home WiFi. Only started with
+  # COMPOSE_PROFILES=home-relay.
   coturn-home:
     container_name: babymonitor-turn-home
     image: coturn/coturn:4.7-alpine
@@ -95,18 +116,40 @@ services:
     network_mode: host
 
     # Not ":?" checks: compose would demand these even from installs that never start this relay.
+    # --allowed-peer-ip wins over the denied ranges, which is what opens the one home range.
     command: >
-      -c /etc/coturn/turnserver.conf
       --realm=${TURN_HOST}
       --server-name=${TURN_HOST}
       --listening-ip=${TURN_LISTENING_IP}
+      ${TURN_EXTERNAL_IP:+--external-ip=$TURN_EXTERNAL_IP}
+      --listening-port=3480
+      --min-port=49201
+      --max-port=49240
+      --use-auth-secret
+      --no-tcp-relay
       --static-auth-secret=${HOME_RELAY_SECRET:-}
-      --allowed-peer-ip=${HOME_RELAY_PEERS:-}
       --no-tls
       --no-dtls
-
-    volumes:
-      - ./deploy/turn/turnserver-home.conf:/etc/coturn/turnserver.conf:ro
+      --no-multicast-peers
+      --denied-peer-ip=0.0.0.0-0.255.255.255
+      --denied-peer-ip=10.0.0.0-10.255.255.255
+      --denied-peer-ip=127.0.0.0-127.255.255.255
+      --denied-peer-ip=169.254.0.0-169.254.255.255
+      --denied-peer-ip=172.16.0.0-172.31.255.255
+      --denied-peer-ip=192.168.0.0-192.168.255.255
+      --denied-peer-ip=::1
+      --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      --allowed-peer-ip=${HOME_RELAY_PEERS:-}
+      --user-quota=12
+      --total-quota=100
+      --max-bps=256000
+      --stale-nonce=600
+      --fingerprint
+      --no-cli
+      --no-stdout-log
+      --simple-log
+      --log-file=stdout
 
     healthcheck:
       test: ["CMD-SHELL", "nc -z -u -w1 ${TURN_LISTENING_IP} 3480 || exit 1"]

@@ -80,9 +80,10 @@ cp .env.example .env
 | `TURN_HOST` | `turn.example.com` |
 | `TURNS_HOST` | `baby.example.com` |
 | `TURN_LISTENING_IP` | the Docker host's own address — must be its real one, not `0.0.0.0` |
+| `TURN_EXTERNAL_IP` | behind NAT: the public address alone, e.g. `203.0.113.7` — not `public/private`, which lets anyone relay to this host |
 
-Behind NAT, also uncomment `external-ip=<public>/<private>` in
-[deploy/turn/turnserver.conf](deploy/turn/turnserver.conf).
+coturn needs no config file: every setting is a flag in `docker-compose.yml`, so that file and
+`.env` are the whole installation.
 
 #### Telling the app about nginx
 
@@ -227,8 +228,7 @@ HOME_RELAY_SECRET=...      # openssl rand -base64 32, not TURN_SECRET
 HOME_RELAY_PEERS=10.0.0.0-10.0.1.255
 ```
 
-Forward 3480 (UDP and TCP) and 49201–49240 (UDP) to the Docker host, and copy `external-ip` into
-[deploy/turn/turnserver-home.conf](deploy/turn/turnserver-home.conf). In the app, enter the key under
+Forward 3480 (UDP and TCP) and 49201–49240 (UDP) to the Docker host. In the app, enter the key under
 **Settings → Server key**; pairing copies it to the other phone. If your router does NAT loopback,
 you do not need any of this.
 
@@ -240,7 +240,7 @@ you do not need any of this.
 |---|---|
 | Calls never connect, nothing in any log | nginx is missing the `Upgrade`/`Connection` lines, so the hub never opens |
 | Connects on WiFi, never from outside | `TURN_HOST` resolves to a private address, or 3478 and 49160–49200 are not forwarded to the Docker host |
-| Relay never works from outside | the host is behind NAT and `external-ip` is not set, so it advertises an address nobody can reach |
+| Relay never works from outside | the host is behind NAT and `TURN_EXTERNAL_IP` is not set, so it advertises an address nobody can reach |
 | `turns:` never connects, `turn:` fine | the certificate is not publicly trusted, or nginx's `stream` block is inside `http { }` |
 | Relay stops working after two months | the certificate renewed and nothing restarted coturn — see the renewal hook below |
 | "The server did not accept the server key" | the key in the app is not `SERVER_KEY` from `.env` |
