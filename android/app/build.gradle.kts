@@ -29,8 +29,8 @@ android {
         targetSdk = 36
         // Literals on purpose. F-Droid reads them from here to notice a new version, so this is
         // where a release number lives and the git tag follows it, not the other way round.
-        versionCode = 6
-        versionName = "0.0.6-alpha"
+        versionCode = 7
+        versionName = "0.0.7-alpha"
 
         // Shown in Settings, so a phone can say which source it is running. Nothing here may
         // vary between two builds of the same commit — no timestamp, no build number, no host
