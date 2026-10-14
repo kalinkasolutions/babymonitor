@@ -79,8 +79,8 @@ services:
       --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
       --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
       ${TURN_TEST_PEERS:+--allowed-peer-ip=$TURN_TEST_PEERS}
-      --user-quota=12
-      --total-quota=100
+      --user-quota=30
+      --total-quota=200
       --max-bps=256000
       --stale-nonce=600
       --fingerprint

@@ -108,6 +108,11 @@ class WebRtcMediaLink(
             // Keep gathering after the first connection: a phone that changes network mid-night
             // needs candidates ready rather than a fresh negotiation from nothing.
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+
+            // Audio, video and data on one transport from the start. Otherwise each gathers its own
+            // candidates, a relay allocation per network and relay URL, and a few redials run into
+            // the relay's per-phone quota.
+            bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
         }
 
         connection = factory.createPeerConnection(configuration, Observer())

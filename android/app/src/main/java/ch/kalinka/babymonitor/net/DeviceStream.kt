@@ -4,6 +4,7 @@ import ch.kalinka.babymonitor.log.AppLog
 import com.microsoft.signalr.HubConnection
 import com.microsoft.signalr.HubConnectionBuilder
 import com.microsoft.signalr.HubConnectionState
+import com.microsoft.signalr.HubException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -172,7 +173,7 @@ class DeviceStream(private val api: ApiClient) {
                 onSuccess = { if (it) SignalResult.Delivered else SignalResult.NotListening },
                 onFailure = {
                     AppLog.w(TAG, "Signal could not be sent", it)
-                    SignalResult.Refused(hubRefusal(it))
+                    if (isServerRefusal(it)) SignalResult.Refused(hubRefusal(it)) else SignalResult.Offline
                 }
             )
     }
@@ -198,6 +199,16 @@ class DeviceStream(private val api: ApiClient) {
  * own, and an unknown method means the other end is older than this app — a deployment to fix,
  * not a phone to go and wake up.
  */
+/**
+ * Whether the server answered no, as opposed to the connection breaking under the call. A phone
+ * changing network loses its connection mid-send ("Software caused connection abort"), and that is
+ * this phone being offline for a moment, not the server refusing anything.
+ */
+fun isServerRefusal(error: Throwable): Boolean {
+    val raw = error.message.orEmpty()
+    return error is HubException || raw.contains(HUB_EXCEPTION_MARKER) || raw.contains("does not exist", ignoreCase = true)
+}
+
 fun hubRefusal(error: Throwable): String {
     val raw = error.message.orEmpty()
     return when {

@@ -734,6 +734,10 @@ class CallCenter private constructor(private val context: Context) {
                 dispatch(CallEvent.Stopped(effect.toDeviceId))
             }
 
+            // Mid-call this is a phone changing network: its server connection drops for a moment,
+            // exactly when the new network's addresses have to reach the other phone.
+            SignalResult.Offline if effect.kind == SignalKinds.Candidate -> resendCandidate(effect)
+
             // Without a relay the WiFi is the only path, so that is the thing to say.
             SignalResult.Offline -> {
                 val reason = if (api.isConfigured) {
@@ -752,6 +756,22 @@ class CallCenter private constructor(private val context: Context) {
                 _message.value = result.reason
                 dispatch(CallEvent.Failure(result.reason))
             }
+        }
+    }
+
+    /**
+     * Tries a candidate again until this phone is back on the server, which after a network change
+     * takes about a second. Quicker than the other phone's patience with a dropped connection.
+     */
+    private fun resendCandidate(effect: CallEffect.Send) {
+        scope.launch {
+            repeat(CandidateResends) {
+                delay(CandidateResendDelay)
+                if (send(effect.toDeviceId, effect.kind, effect.body) != SignalResult.Offline) {
+                    return@launch
+                }
+            }
+            AppLog.w(Tag, "Gave up resending a candidate to ${effect.toDeviceId}: still offline")
         }
     }
 
@@ -1010,6 +1030,8 @@ class CallCenter private constructor(private val context: Context) {
 
         /** Long enough for a phone hopping between networks, short enough to be worth waiting. */
         private const val DropGrace = 8_000L
+        private const val CandidateResends = 6
+        private const val CandidateResendDelay = 1_000L
 
         /** Asking and negotiating both take seconds; this much means nobody is there. */
         private const val AnswerLimit = 15_000L

@@ -1,6 +1,8 @@
 package ch.kalinka.babymonitor.net
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -30,5 +32,16 @@ class HubRefusalTest {
     fun `anything else is passed through rather than swallowed`() {
         assertEquals("Websocket closed.", hubRefusal(RuntimeException("Websocket closed.")))
         assertEquals("The server refused the call.", hubRefusal(RuntimeException()))
+    }
+
+    @Test
+    fun `a connection lost mid-send is not a refusal`() {
+        assertFalse(isServerRefusal(RuntimeException("Software caused connection abort")))
+    }
+
+    @Test
+    fun `the server saying no is a refusal`() {
+        assertTrue(isServerRefusal(RuntimeException("Invoking 'Signal' failed. HubException: Not yours.")))
+        assertTrue(isServerRefusal(RuntimeException("The 'Signal' method does not exist on the server.")))
     }
 }
