@@ -520,7 +520,18 @@ class CallCenter private constructor(private val context: Context) {
             }
 
             SignalKinds.Stop -> {
-                signal.body.takeIf { it.isNotBlank() }?.let { _message.value = it }
+                val reason = signal.body.takeIf { it.isNotBlank() }
+                reason?.let { _message.value = it }
+
+                // No reason is somebody at that phone pressing Stop. Calling it straight back
+                // would undo what they just did, so this phone stops wanting it.
+                if (reason == null && wanted?.first == from) {
+                    AppLog.i(Tag, "$from stopped the call; not calling it back")
+                    wanted = null
+                    stopRedialling()
+                    _message.value = "${nameOf(from)} stopped the call."
+                }
+
                 dispatch(CallEvent.Stopped(from))
             }
 
