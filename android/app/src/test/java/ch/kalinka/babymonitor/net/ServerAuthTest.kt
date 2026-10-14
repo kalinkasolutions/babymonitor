@@ -1,6 +1,7 @@
 package ch.kalinka.babymonitor.net
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.KeyPairGenerator
@@ -34,5 +35,12 @@ class ServerAuthTest {
             verify(Base64.getDecoder().decode(headers["X-Device-Signature"]))
         }
         assertTrue(valid)
+    }
+
+    @Test
+    fun `without a server key no key header is sent`() {
+        val headers = serverAuthHeaders("", "public-key", now = 1_700_000_000_000) { ByteArray(0) }
+
+        assertFalse(headers.containsKey("X-Server-Key"))
     }
 }

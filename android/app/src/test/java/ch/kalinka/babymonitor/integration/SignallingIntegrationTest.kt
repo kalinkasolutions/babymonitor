@@ -16,7 +16,7 @@ import org.junit.Test
  *
  * Skipped when there is no relay, so an ordinary `./gradlew test` stays green. To run it:
  *
- *     Server__Key=integration-test-key ASPNETCORE_URLS=http://127.0.0.1:5199 \
+ *     ASPNETCORE_URLS=http://127.0.0.1:5199 \
  *     dotnet run --project backend/Babymonitor.Api --no-launch-profile
  */
 class SignallingIntegrationTest {
@@ -112,9 +112,9 @@ class SignallingIntegrationTest {
     }
 
     @Test
-    fun `relay credentials need the right server key`() {
+    fun `relay credentials need a signed request`() {
         assertEquals(200, nursery.iceServersStatus())
-        assertEquals(401, nursery.iceServersStatus(nursery.authHeaders() + ("X-Server-Key" to "wrong")))
+        assertEquals(401, nursery.iceServersStatus(emptyMap()))
     }
 
     private fun hub(phone: TestPhone): Hub = phone.connectHub().also { hubs.add(it) }

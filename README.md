@@ -25,7 +25,8 @@ the call when nothing else gets through. See
 from anywhere.
 
 The server keeps no accounts and no database. Phones prove who they are with the key they already
-have, and a shared server key decides who may use it at all.
+have. Anyone who knows the address can use it, except the optional home relay, which needs the
+server key.
 
 Two containers, one compose file: the .NET app and coturn. **No certificate goes on the Docker
 host** — nginx already has one.
@@ -50,6 +51,7 @@ name is enough if nginx and Docker are the same machine.
 | nginx | 5349 TCP | the relay over TLS |
 | Docker host | 3478 UDP **and** TCP | STUN and the relay |
 | Docker host | 49160–49200 UDP | relayed media |
+| Docker host | 3480 UDP **and** TCP, 49201–49240 UDP | only with the [home relay](#the-home-relay) |
 
 ### 3. nginx
 
@@ -72,7 +74,6 @@ cp .env.example .env
 
 | | |
 |---|---|
-| `SERVER_KEY` | `openssl rand -base64 24` — you type this into the app once |
 | `PROXY_TRUST_ANY` | `true`, unless nginx is on another machine — see below |
 | `APP_BIND_ADDRESS` | `127.0.0.1`, unless nginx is on another machine |
 | `TURN_SECRET` | `openssl rand -base64 32` |
@@ -207,6 +208,30 @@ TURN_TEST_PEERS=10.0.0.0-10.255.255.255
 
 Then turn on **Settings → Always use the relay** in the app and watch the icon change.
 
+### The home relay
+
+The refusal above has one cost. If the server is in the same house as the phone in the room, a
+phone outside can only reach that room phone if the router loops traffic for its own public
+address back in ("NAT loopback"). Many routers do not. Then the room phone never learns its public
+address, and the only way left is the relay sending to its private one, which it refuses.
+
+The home relay is a second coturn that may reach one private range: your home network. Because
+that makes it a doorway into the house, only phones holding the **server key** get a credential
+for it, and it has its own secret, so a credential for the open relay does not work on it.
+
+```bash
+# .env
+COMPOSE_PROFILES=home-relay
+SERVER_KEY=...             # openssl rand -base64 24, typed into the app once
+HOME_RELAY_SECRET=...      # openssl rand -base64 32, not TURN_SECRET
+HOME_RELAY_PEERS=10.0.0.0-10.0.1.255
+```
+
+Forward 3480 (UDP and TCP) and 49201–49240 (UDP) to the Docker host, and copy `external-ip` into
+[deploy/turn/turnserver-home.conf](deploy/turn/turnserver-home.conf). In the app, enter the key under
+**Settings → Server key**; pairing copies it to the other phone. If your router does NAT loopback,
+you do not need any of this.
+
 ---
 
 ## When something is wrong
@@ -219,6 +244,8 @@ Then turn on **Settings → Always use the relay** in the app and watch the icon
 | `turns:` never connects, `turn:` fine | the certificate is not publicly trusted, or nginx's `stream` block is inside `http { }` |
 | Relay stops working after two months | the certificate renewed and nothing restarted coturn — see the renewal hook below |
 | "The server did not accept the server key" | the key in the app is not `SERVER_KEY` from `.env` |
+| "The server did not accept this phone's signature" | the phone's clock is more than five minutes off |
+| The room phone is at home, and a phone outside never connects | the router does no NAT loopback — set up the [home relay](#the-home-relay) |
 | Every log line says the same client address | `PROXY_TRUST_ANY`/`PROXY_TRUSTED` not set, so `X-Forwarded-For` is ignored |
 | "Not reachable" next to a phone | that phone has no connection to the server; open the app on it |
 | The room stays dark on video | the phone in the room lacks "display over other apps" |
@@ -238,7 +265,7 @@ docker restart babymonitor-turn
 
 ```bash
 cd backend
-Server__Key=dev dotnet run --project Babymonitor.Api   # https://*:5005
+dotnet run --project Babymonitor.Api     # https://*:5005
 dotnet test                               # the backend suite
 
 cd android
@@ -370,11 +397,11 @@ None of this is something a parent installing a monitor will do. It is there so 
 skips itself when there is none, so an ordinary test run stays green. Start one:
 
 ```bash
-Server__Key=integration-test-key ASPNETCORE_URLS=http://127.0.0.1:5199 \
+ASPNETCORE_URLS=http://127.0.0.1:5199 \
 dotnet run --project backend/Babymonitor.Api --no-launch-profile
 ```
 
-Point it elsewhere with `BABYMONITOR_URL` and `BABYMONITOR_KEY`. What it cannot cover is the media: that needs two real
+Point it elsewhere with `BABYMONITOR_URL`. What it cannot cover is the media: that needs two real
 phones.
 
 ### Both phones at once
@@ -422,12 +449,12 @@ The webcam lets you hold the other phone up to it to test QR scanning.
 | route | |
 |---|---|
 | `GET api/status` | `{"ok":true}`, no key needed |
-| `GET api/status/key` | 200 when `X-Server-Key` is right, 401 when not |
-| `GET api/turn/credentials` | a relay credential, good for twelve hours |
+| `GET api/status/key` | 200 with `homeRelay` when `X-Server-Key` is right, 401 when not; 200 on a server without a key |
+| `GET api/turn/credentials` | a relay credential, good for twelve hours, and under `homeRelay` a second one when `X-Server-Key` is right |
 
-Every call except the status check carries four headers: `X-Server-Key`, and `X-Device-Key`,
-`X-Device-Time`, `X-Device-Signature` — the phone's public key and its signature over
-`babymonitor-hub\n<time>`. A phone's id is the first 16 bytes of SHA-256 over its key, in hex, so
+Every call except the status check carries three headers: `X-Device-Key`, `X-Device-Time`,
+`X-Device-Signature` — the phone's public key and its signature over `babymonitor-hub\n<time>`.
+`X-Server-Key` is added when the phone has one. A phone's id is the first 16 bytes of SHA-256 over its key, in hex, so
 the server needs no list of phones.
 
 Phones also hold a SignalR connection to `/hubs/devices`, signed in the same way:

@@ -40,9 +40,7 @@ builder.Host.UseSerilog((_, configuration) =>
     }
 });
 
-// Created here rather than lazily, so a missing key stops startup instead of the first request.
-var serverKey = new ServerKey(builder.Configuration[$"{ServerKey.SectionName}:Key"] ?? string.Empty);
-builder.Services.AddSingleton(serverKey);
+builder.Services.AddSingleton(new ServerKey(builder.Configuration[$"{ServerKey.SectionName}:Key"]));
 
 builder.Services.AddSignalR();
 builder.Services.AddAuthentication(DeviceKeyAuthenticationHandler.SchemeName)
@@ -51,6 +49,7 @@ builder.Services.AddAuthentication(DeviceKeyAuthenticationHandler.SchemeName)
 builder.Services.AddAuthorization();
 
 builder.Services.Configure<TurnOptions>(builder.Configuration.GetSection(TurnOptions.SectionName));
+builder.Services.Configure<TurnOptions>(TurnOptions.HomeRelay, builder.Configuration.GetSection(TurnOptions.HomeRelay));
 builder.Services.AddSingleton<TurnService>();
 builder.Services.AddSingleton<DeviceConnections>();
 

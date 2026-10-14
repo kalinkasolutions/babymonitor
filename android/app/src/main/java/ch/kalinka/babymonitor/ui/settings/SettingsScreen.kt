@@ -33,11 +33,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.kalinka.babymonitor.BuildConfig
 import androidx.compose.runtime.remember
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import ch.kalinka.babymonitor.device.signingKeyId
 import ch.kalinka.babymonitor.media.MonitorViewModel
 import ch.kalinka.babymonitor.media.NoiseAlarmSettings
@@ -126,7 +126,8 @@ private fun ServerSettingsBlock(server: ServerViewModel) {
     OutlinedTextField(
         value = key,
         onValueChange = { key = it },
-        label = { Text("Server key") },
+        label = { Text("Server key (optional)") },
+        supportingText = { Text("Only for a server with a home relay. Ask whoever runs it.") },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth()
@@ -141,7 +142,11 @@ private fun ServerSettingsBlock(server: ServerViewModel) {
     val (line, isError) = when (val current = check) {
         ServerCheck.NotChecked -> null to false
         ServerCheck.Checking -> "Checking…" to false
-        ServerCheck.Works -> "The server answers and accepts the key." to false
+        is ServerCheck.Works -> when (current.homeRelay) {
+            null -> "The server answers."
+            true -> "The server answers, and the key opens its home relay."
+            false -> "The server answers. It has no home relay, so the key is not needed."
+        } to false
         is ServerCheck.Fails -> current.reason to true
     }
     line?.let {

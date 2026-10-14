@@ -208,7 +208,8 @@ Light, because phones have no infrared and a dark room films as black:
 
 Optional, stateless, no database:
 
-- [x] A shared server key, so only people given it can use the server
+- [x] An optional server key, which unlocks the home relay: a second relay that may reach the
+      server's own network, for when the router does no NAT loopback
 - [x] Phones sign in with their identity key: a signature over the current time, checked
       against the key they send, which gives an id nobody else can claim
 - [x] SignalR hub that relays signals to one phone by id and says whether it was connected

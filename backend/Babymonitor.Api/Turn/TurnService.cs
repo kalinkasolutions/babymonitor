@@ -11,35 +11,48 @@ namespace Babymonitor.Turn;
 /// </summary>
 public sealed class TurnService
 {
-    private readonly TurnOptions m_options;
+    private readonly TurnOptions m_open;
+    private readonly TurnOptions m_home;
     private readonly ILogger<TurnService> m_logger;
 
-    public TurnService(IOptions<TurnOptions> options, ILogger<TurnService> logger)
+    public TurnService(IOptionsMonitor<TurnOptions> options, ILogger<TurnService> logger)
     {
-        m_options = options.Value;
+        m_open = options.Get(Options.DefaultName);
+        m_home = options.Get(TurnOptions.HomeRelay);
         m_logger = logger;
     }
 
-    public IceServers Issue(string deviceId)
+    public bool HasHomeRelay => m_home.IsConfigured;
+
+    /// <summary>The open relay for every phone, and the home relay too for one that sent the key.</summary>
+    public IceServers Issue(string deviceId, bool withHomeRelay)
     {
-        if (!m_options.IsConfigured)
+        var open = Mint(m_open, deviceId, "open");
+        return withHomeRelay && m_home.IsConfigured
+            ? open with { HomeRelay = Mint(m_home, deviceId, "home") }
+            : open;
+    }
+
+    private IceServers Mint(TurnOptions relay, string deviceId, string relayName)
+    {
+        if (!relay.IsConfigured)
         {
             // Phones on one WiFi never need a relay, so STUN alone is a valid setup.
-            var stun = m_options.Urls
+            var stun = relay.Urls
                 .Where(url => url.StartsWith("stun:", StringComparison.OrdinalIgnoreCase))
                 .ToList();
             return new IceServers(stun, string.Empty, string.Empty, DateTime.UtcNow);
         }
 
-        var expiresAt = DateTime.UtcNow.Add(m_options.Lifetime);
+        var expiresAt = DateTime.UtcNow.Add(relay.Lifetime);
         var username = string.Create(
             CultureInfo.InvariantCulture,
             $"{new DateTimeOffset(expiresAt, TimeSpan.Zero).ToUnixTimeSeconds()}:{deviceId}");
 
         m_logger.LogInformation(
-            "Issued a relay credential to device {DeviceId}, good until {ExpiresAt:u}", deviceId, expiresAt);
+            "Issued a credential for the {Relay} relay to device {DeviceId}, good until {ExpiresAt:u}", relayName, deviceId, expiresAt);
 
-        return new IceServers(m_options.Urls, username, Sign(username, m_options.Secret), expiresAt);
+        return new IceServers(relay.Urls, username, Sign(username, relay.Secret), expiresAt);
     }
 
     private static string Sign(string username, string secret)

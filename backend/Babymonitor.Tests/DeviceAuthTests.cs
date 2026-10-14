@@ -36,22 +36,11 @@ public sealed class DeviceAuthTests : IClassFixture<BabymonitorApp>
     }
 
     [Fact]
-    public async Task TheWrongServerKeyIsRefused()
-    {
-        using var phone = new TestPhone();
-        using var client = m_app.CreateClientFor(phone, serverKey: "not-the-key");
-
-        using var response = await client.GetAsync(ProtectedPath);
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
     public async Task ASignatureFromAnotherKeyIsRefused()
     {
         using var phone = new TestPhone();
         using var impostor = new TestPhone();
-        var headers = phone.AuthHeaders(BabymonitorApp.ServerKey);
+        var headers = phone.AuthHeaders();
         headers[DeviceKeyAuthenticationHandler.SignatureHeader] =
             impostor.Sign(headers[DeviceKeyAuthenticationHandler.TimeHeader]);
 
@@ -64,7 +53,7 @@ public sealed class DeviceAuthTests : IClassFixture<BabymonitorApp>
     public async Task ASignatureOverADifferentTimeIsRefused()
     {
         using var phone = new TestPhone();
-        var headers = phone.AuthHeaders(BabymonitorApp.ServerKey);
+        var headers = phone.AuthHeaders();
         headers[DeviceKeyAuthenticationHandler.TimeHeader] =
             (long.Parse(headers[DeviceKeyAuthenticationHandler.TimeHeader], CultureInfo.InvariantCulture) + 1)
             .ToString(CultureInfo.InvariantCulture);
@@ -114,7 +103,7 @@ public sealed class DeviceAuthTests : IClassFixture<BabymonitorApp>
     {
         using var phone = new TestPhone();
         using var rsa = RSA.Create(2048);
-        var headers = phone.AuthHeaders(BabymonitorApp.ServerKey);
+        var headers = phone.AuthHeaders();
         headers[DeviceKeyAuthenticationHandler.KeyHeader] = Convert.ToBase64String(rsa.ExportSubjectPublicKeyInfo());
 
         using var response = await SendAsync(headers);
@@ -131,24 +120,6 @@ public sealed class DeviceAuthTests : IClassFixture<BabymonitorApp>
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("""{"ok":true}""", await response.Content.ReadAsStringAsync());
-    }
-
-    [Theory]
-    [InlineData(BabymonitorApp.ServerKey, HttpStatusCode.OK)]
-    [InlineData("not-the-key", HttpStatusCode.Unauthorized)]
-    [InlineData(null, HttpStatusCode.Unauthorized)]
-    public async Task TheKeyCheckNeedsOnlyTheServerKey(string? serverKey, HttpStatusCode expected)
-    {
-        using var client = m_app.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, "api/status/key");
-        if (serverKey is not null)
-        {
-            request.Headers.Add(ServerKey.HeaderName, serverKey);
-        }
-
-        using var response = await client.SendAsync(request);
-
-        Assert.Equal(expected, response.StatusCode);
     }
 
     private async Task<HttpResponseMessage> SendAsync(Dictionary<string, string> headers)

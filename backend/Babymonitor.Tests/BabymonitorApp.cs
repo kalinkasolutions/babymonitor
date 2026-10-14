@@ -5,26 +5,28 @@ using Microsoft.AspNetCore.SignalR.Client;
 
 namespace Babymonitor.Tests;
 
-/// <summary>The real application, with a known server key and no relay.</summary>
+/// <summary>The real application, with no relay.</summary>
 public class BabymonitorApp : WebApplicationFactory<Program>
 {
-    public const string ServerKey = "test-server-key";
-
     // Not Development, so the tests run the configuration a real deployment uses.
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Production");
-        builder.UseSetting("Server:Key", ServerKey);
         builder.UseSetting("Turn:Secret", string.Empty);
     }
 
-    /// <summary>A client that sends the phone's signed headers on every request.</summary>
-    public HttpClient CreateClientFor(TestPhone phone, string serverKey = ServerKey, DateTimeOffset? signedAt = null)
+    /// <summary>A client that sends the phone's signed headers on every request, and the server key if given.</summary>
+    public HttpClient CreateClientFor(TestPhone phone, DateTimeOffset? signedAt = null, string? serverKey = null)
     {
         var client = CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
-        foreach (var (name, value) in phone.AuthHeaders(serverKey, signedAt))
+        foreach (var (name, value) in phone.AuthHeaders(signedAt))
         {
             client.DefaultRequestHeaders.Add(name, value);
+        }
+
+        if (serverKey is not null)
+        {
+            client.DefaultRequestHeaders.Add(Auth.ServerKey.HeaderName, serverKey);
         }
 
         return client;
@@ -38,7 +40,7 @@ public class BabymonitorApp : WebApplicationFactory<Program>
                 // Long polling, because the test server's handler only speaks plain HTTP.
                 options.Transports = HttpTransportType.LongPolling;
                 options.HttpMessageHandlerFactory = _ => Server.CreateHandler();
-                foreach (var (name, value) in phone.AuthHeaders(ServerKey))
+                foreach (var (name, value) in phone.AuthHeaders())
                 {
                     options.Headers.Add(name, value);
                 }

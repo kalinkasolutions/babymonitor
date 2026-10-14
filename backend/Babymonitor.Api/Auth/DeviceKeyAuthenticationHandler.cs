@@ -22,16 +22,12 @@ public sealed class DeviceKeyAuthenticationHandler : AuthenticationHandler<Authe
     private const string SignedPrefix = "babymonitor-hub\n";
     private static readonly TimeSpan s_maxClockSkew = TimeSpan.FromMinutes(5);
 
-    private readonly ServerKey m_serverKey;
-
     public DeviceKeyAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
-        UrlEncoder encoder,
-        ServerKey serverKey)
+        UrlEncoder encoder)
         : base(options, logger, encoder)
     {
-        m_serverKey = serverKey;
     }
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync() => Task.FromResult(VerifyRequest());
@@ -55,11 +51,6 @@ public sealed class DeviceKeyAuthenticationHandler : AuthenticationHandler<Authe
         }
 
         var deviceId = DeviceId.FromPublicKey(publicKey);
-
-        if (!m_serverKey.Matches(headers[ServerKey.HeaderName]))
-        {
-            return Refuse("wrong server key", deviceId);
-        }
 
         if (!long.TryParse(time, NumberStyles.None, CultureInfo.InvariantCulture, out var milliseconds))
         {

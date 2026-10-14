@@ -5,8 +5,9 @@ import androidx.core.content.edit
 import ch.kalinka.babymonitor.BuildConfig
 
 /**
- * The optional relay server: its address and the key that lets a phone use it. Without one the
- * phones still work, but only on the same WiFi.
+ * The optional relay server: its address, and the key that also unlocks its home relay. Without a
+ * server the phones still work, but only on the same WiFi; without the key everything but the home
+ * relay works.
  */
 class ServerSettings(context: Context) {
     private val prefs = context.getSharedPreferences("server", Context.MODE_PRIVATE)
@@ -20,7 +21,7 @@ class ServerSettings(context: Context) {
         set(value) = prefs.edit { putString(Key, value.trim()) }
 
     val isConfigured: Boolean
-        get() = baseUrl.isNotBlank() && key.isNotBlank()
+        get() = baseUrl.isNotBlank()
 
     private companion object {
         const val BaseUrl = "baseUrl"

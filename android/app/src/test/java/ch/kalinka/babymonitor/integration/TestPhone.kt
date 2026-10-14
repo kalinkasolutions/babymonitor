@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
  * A phone talking to a real relay: its own P-256 key, signed in the same way the app signs in.
  * Built on plain JVM classes because the app's own key lives in the Android keystore.
  */
-class TestPhone(private val baseUrl: String = Backend.Url, private val serverKey: String = Backend.Key) {
+class TestPhone(private val baseUrl: String = Backend.Url) {
     private val keys: KeyPair = KeyPairGenerator.getInstance("EC")
         .apply { initialize(ECGenParameterSpec("secp256r1")) }
         .generateKeyPair()
@@ -30,7 +30,7 @@ class TestPhone(private val baseUrl: String = Backend.Url, private val serverKey
     private val json = Json { ignoreUnknownKeys = true }
 
     fun authHeaders(now: Long = System.currentTimeMillis()): Map<String, String> =
-        serverAuthHeaders(serverKey, publicKey, now) { bytes ->
+        serverAuthHeaders("", publicKey, now) { bytes ->
             Signature.getInstance("SHA256withECDSA").run {
                 initSign(keys.private)
                 update(bytes)
@@ -62,9 +62,8 @@ class TestPhone(private val baseUrl: String = Backend.Url, private val serverKey
 }
 
 object Backend {
-    /** Where the relay under test is, and its key. Override with BABYMONITOR_URL and BABYMONITOR_KEY. */
+    /** Where the relay under test is. Override with BABYMONITOR_URL. */
     val Url: String = System.getenv("BABYMONITOR_URL") ?: "http://127.0.0.1:5199"
-    val Key: String = System.getenv("BABYMONITOR_KEY") ?: "integration-test-key"
 
     fun isRunning(): Boolean = runCatching {
         OkHttpClient.Builder().callTimeout(3, TimeUnit.SECONDS).build()

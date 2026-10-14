@@ -13,7 +13,8 @@ import kotlinx.coroutines.launch
 sealed interface ServerCheck {
     data object NotChecked : ServerCheck
     data object Checking : ServerCheck
-    data object Works : ServerCheck
+    /** [homeRelay] is null when no key was typed in, so there was nothing to check it against. */
+    data class Works(val homeRelay: Boolean?) : ServerCheck
     data class Fails(val reason: String) : ServerCheck
 }
 
@@ -42,7 +43,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         _check.value = ServerCheck.Checking
         viewModelScope.launch {
             _check.value = when (val result = api.check()) {
-                is ApiResult.Ok -> ServerCheck.Works
+                is ApiResult.Ok -> ServerCheck.Works(result.value)
                 is ApiResult.Failure -> ServerCheck.Fails(result.message)
             }
         }

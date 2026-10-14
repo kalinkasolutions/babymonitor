@@ -42,8 +42,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         publicKey = DeviceIdentity.publicKey(),
         name = household.name,
         secret = secret,
-        server = server.baseUrl.takeIf { server.isConfigured }.orEmpty(),
-        serverKey = server.key.takeIf { server.isConfigured }.orEmpty()
+        server = server.baseUrl,
+        serverKey = server.key
     ).encode()
 
     /** Whether the pairing message can only travel over the WiFi. */
@@ -88,8 +88,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             name = household.name,
             publicKey = DeviceIdentity.publicKey(),
             proof = PairingProof.sign(payload.secret, household.deviceId, DeviceIdentity.publicKey()),
-            server = server.baseUrl.takeIf { server.isConfigured }.orEmpty(),
-            serverKey = server.key.takeIf { server.isConfigured }.orEmpty()
+            server = server.baseUrl,
+            serverKey = server.key
         )
         val message = SignalMessage(
             toDeviceId = payload.deviceId,
@@ -152,15 +152,29 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Takes the other phone's relay settings when this one has none, so only one needs typing in. */
+    /**
+     * Takes the other phone's relay settings where this one has none, so only one needs typing in:
+     * its server when this phone has no server, its key when both use the same server.
+     */
     private fun adoptServer(url: String, key: String) {
-        if (server.isConfigured || url.isBlank() || key.isBlank()) {
+        if (url.isBlank()) {
             return
         }
 
-        AppLog.i(Tag, "Using the server the other phone uses: $url")
-        server.baseUrl = url
-        server.key = key
+        val adoptUrl = !server.isConfigured
+        val adoptKey = key.isNotBlank() && server.key.isBlank() && (adoptUrl || server.baseUrl == url)
+        if (!adoptUrl && !adoptKey) {
+            return
+        }
+
+        if (adoptUrl) {
+            AppLog.i(Tag, "Using the server the other phone uses: $url")
+            server.baseUrl = url
+        }
+        if (adoptKey) {
+            AppLog.i(Tag, "Using the server key the other phone uses")
+            server.key = key
+        }
         calls.reconnect()
     }
 

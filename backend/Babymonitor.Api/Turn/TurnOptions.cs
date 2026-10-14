@@ -1,12 +1,15 @@
 namespace Babymonitor.Turn;
 
 /// <summary>
-/// The relay, bound from the <c>Turn</c> section. The secret is coturn's
-/// <c>static-auth-secret</c>; anything holding it can mint credentials.
+/// A relay, bound from the <c>Turn</c> section, or from <c>HomeRelay</c> as the named options
+/// <see cref="HomeRelay"/>. The secret is coturn's <c>static-auth-secret</c>; anything holding it
+/// can mint credentials. The two relays need different secrets, or a credential for the open relay
+/// would also work on the home one.
 /// </summary>
 public sealed class TurnOptions
 {
     public const string SectionName = "Turn";
+    public const string HomeRelay = "HomeRelay";
 
     public string Secret { get; set; } = string.Empty;
 

@@ -28,12 +28,11 @@ public sealed class TestPhone : IDisposable
             HashAlgorithmName.SHA256,
             DSASignatureFormat.Rfc3279DerSequence));
 
-    public Dictionary<string, string> AuthHeaders(string serverKey, DateTimeOffset? signedAt = null)
+    public Dictionary<string, string> AuthHeaders(DateTimeOffset? signedAt = null)
     {
         var time = (signedAt ?? DateTimeOffset.UtcNow).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [ServerKey.HeaderName] = serverKey,
             [DeviceKeyAuthenticationHandler.KeyHeader] = PublicKey,
             [DeviceKeyAuthenticationHandler.TimeHeader] = time,
             [DeviceKeyAuthenticationHandler.SignatureHeader] = Sign(time)

@@ -43,11 +43,22 @@ class ApiClient(context: Context) {
         serverAuthHeaders(settings.key, DeviceIdentity.publicKey(), System.currentTimeMillis(), DeviceIdentity::sign)
 
     suspend fun iceServers(): ApiResult<IceServersDto> =
-        get("api/turn/credentials", authHeaders()) { json.decodeFromString(it) }
+        get("api/turn/credentials", authHeaders(), "The server did not accept this phone's signature.") {
+            json.decodeFromString(it)
+        }
 
-    /** Whether the address answers and the key is accepted, told apart so the user knows which to fix. */
-    suspend fun check(): ApiResult<Unit> =
-        get("api/status/key", mapOf("X-Server-Key" to settings.key)) { }
+    /**
+     * Whether the address answers, and with a key typed in, whether that key opens a home relay:
+     * true or false then, null when there is no key to check.
+     */
+    suspend fun check(): ApiResult<Boolean?> =
+        if (settings.key.isBlank()) {
+            get("api/status", emptyMap(), "The server refused the check.") { null }
+        } else {
+            get("api/status/key", mapOf(ServerKeyHeader to settings.key), "The server did not accept the server key.") {
+                json.decodeFromString<KeyStatusDto>(it).homeRelay
+            }
+        }
 
     /** Never logs anything itself: a line about each upload would be uploaded too, forever. */
     suspend fun uploadLogs(body: String): LogUpload = withContext(Dispatchers.IO) {
@@ -79,13 +90,13 @@ class ApiClient(context: Context) {
     private suspend fun <T> get(
         path: String,
         headers: Map<String, String>,
+        refused: String,
         decode: (String) -> T
     ): ApiResult<T> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
             return@withContext ApiResult.Failure("No server set.")
         }
 
-        // Logs the route and the status only: the headers carry the server key.
         val route = "GET /$path"
         try {
             val request = Request.Builder()
@@ -98,8 +109,8 @@ class ApiClient(context: Context) {
                 val body = response.body.string()
                 when {
                     response.code == 401 -> {
-                        AppLog.w(Tag, "$route refused: wrong server key or signature")
-                        ApiResult.Failure("The server did not accept the server key.")
+                        AppLog.w(Tag, "$route refused with 401: $refused")
+                        ApiResult.Failure(refused)
                     }
 
                     !response.isSuccessful -> {

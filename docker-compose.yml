@@ -13,9 +13,6 @@ services:
       - ASPNETCORE_URLS=http://+:5001
       # Development only adds the cause of a server error to the response. Leave it Production.
       - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
-      # Every phone sends this key, so only people told it can use the relay. The app refuses
-      # to start without one.
-      - Server__Key=${SERVER_KEY:?set SERVER_KEY in .env}
       # nginx terminates TLS and forwards plain HTTP, so only it knows the request was secure.
       # Those headers are forgeable, so they are believed only from an address named here. The
       # framework's own default is loopback, which inside a container means nobody — the proxy
@@ -28,6 +25,8 @@ services:
       # Minimum log level written to the console. One of:
       # Trace, Debug, Information, Warning, Error, Critical. Defaults to Information.
       - Logging__LogLevel__Default=${LOG_LEVEL:-Information}
+      # Optional. A phone that sends this key also gets the home relay below. Nothing else needs it.
+      - Server__Key=${SERVER_KEY:-}
       # Also ships the server's log, and every line the phones upload, to Loki.
       - Loki__Enabled=${LOKI_ENABLED:-false}
       - Loki__Uri=${LOKI_URI:-}
@@ -43,6 +42,11 @@ services:
       - Turn__Urls__1=turn:${TURN_HOST}:3478?transport=udp
       - Turn__Urls__2=turn:${TURN_HOST}:3478?transport=tcp
       - Turn__Urls__3=turns:${TURNS_HOST}:5349?transport=tcp
+      # The home relay, handed only to phones that sent SERVER_KEY. Its own secret, or a credential
+      # for the open relay would work on this one too.
+      - HomeRelay__Secret=${HOME_RELAY_SECRET:-}
+      - HomeRelay__Urls__0=turn:${TURN_HOST}:3480?transport=udp
+      - HomeRelay__Urls__1=turn:${TURN_HOST}:3480?transport=tcp
 
   coturn:
     container_name: babymonitor-turn
@@ -76,6 +80,36 @@ services:
     # rather than loopback, which coturn deliberately no longer binds.
     healthcheck:
       test: ["CMD-SHELL", "nc -z -u -w1 ${TURN_LISTENING_IP} 3478 || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # The home relay: like the one above, but it may reach this house's own network, so a phone
+  # outside can reach one on the home WiFi. Only started with COMPOSE_PROFILES=home-relay.
+  coturn-home:
+    container_name: babymonitor-turn-home
+    image: coturn/coturn:4.7-alpine
+    restart: always
+    profiles: [ home-relay ]
+    network_mode: host
+
+    # Not ":?" checks: compose would demand these even from installs that never start this relay.
+    command: >
+      -c /etc/coturn/turnserver.conf
+      --realm=${TURN_HOST}
+      --server-name=${TURN_HOST}
+      --listening-ip=${TURN_LISTENING_IP}
+      --static-auth-secret=${HOME_RELAY_SECRET:-}
+      --allowed-peer-ip=${HOME_RELAY_PEERS:-}
+      --no-tls
+      --no-dtls
+
+    volumes:
+      - ./deploy/turn/turnserver-home.conf:/etc/coturn/turnserver.conf:ro
+
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z -u -w1 ${TURN_LISTENING_IP} 3480 || exit 1"]
       interval: 60s
       timeout: 5s
       retries: 3
