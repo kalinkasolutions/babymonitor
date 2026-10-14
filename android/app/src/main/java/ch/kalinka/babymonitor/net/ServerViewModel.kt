@@ -13,8 +13,7 @@ import kotlinx.coroutines.launch
 sealed interface ServerCheck {
     data object NotChecked : ServerCheck
     data object Checking : ServerCheck
-    /** [homeRelay] is null when no key was typed in, so there was nothing to check it against. */
-    data class Works(val homeRelay: Boolean?) : ServerCheck
+    data object Works : ServerCheck
     data class Fails(val reason: String) : ServerCheck
 }
 
@@ -24,15 +23,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     private val calls = CallCenter.of(application)
 
     val url: String get() = settings.baseUrl
-    val key: String get() = settings.key
 
     private val _check = MutableStateFlow<ServerCheck>(ServerCheck.NotChecked)
     val check: StateFlow<ServerCheck> = _check.asStateFlow()
 
     /** Saves and then checks, so a typo shows up straight away rather than at night. */
-    fun save(url: String, key: String) {
+    fun save(url: String) {
         settings.baseUrl = url
-        settings.key = key
         calls.reconnect()
 
         if (!settings.isConfigured) {
@@ -43,7 +40,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         _check.value = ServerCheck.Checking
         viewModelScope.launch {
             _check.value = when (val result = api.check()) {
-                is ApiResult.Ok -> ServerCheck.Works(result.value)
+                is ApiResult.Ok -> ServerCheck.Works
                 is ApiResult.Failure -> ServerCheck.Fails(result.message)
             }
         }

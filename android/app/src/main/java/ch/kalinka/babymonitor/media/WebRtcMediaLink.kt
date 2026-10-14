@@ -432,14 +432,13 @@ class WebRtcMediaLink(
  * STUN is asked nothing and told nothing: it exists to hand a phone its own public address. Only
  * the relay takes a credential, because only the relay carries traffic worth paying for.
  */
-fun IceServersDto.toIceServers(): List<PeerConnection.IceServer> =
-    urls.map { url ->
-        val relay = !url.startsWith("stun:", ignoreCase = true)
-        PeerConnection.IceServer.builder(url)
-            .setUsername(if (relay) username else "")
-            .setPassword(if (relay) credential else "")
-            .createIceServer()
-    } + homeRelay?.toIceServers().orEmpty()
+fun IceServersDto.toIceServers(): List<PeerConnection.IceServer> = urls.map { url ->
+    val relay = !url.startsWith("stun:", ignoreCase = true)
+    PeerConnection.IceServer.builder(url)
+        .setUsername(if (relay) username else "")
+        .setPassword(if (relay) credential else "")
+        .createIceServer()
+}
 
 /**
  * Turns the four-method Java observer into the one callback each use actually has.

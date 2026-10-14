@@ -23,11 +23,5 @@ data class IceServersDto(
     val urls: List<String> = emptyList(),
     val username: String = "",
     val credential: String = "",
-    val expiresAt: String = "",
-
-    /** The relay that may reach the server's own network; only sent to a phone with the server key. */
-    val homeRelay: IceServersDto? = null
+    val expiresAt: String = ""
 )
-
-@Serializable
-data class KeyStatusDto(val ok: Boolean = false, val homeRelay: Boolean = false)

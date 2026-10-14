@@ -33,7 +33,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.kalinka.babymonitor.BuildConfig
@@ -105,12 +104,11 @@ fun SettingsScreen(
 @Composable
 private fun ServerSettingsBlock(server: ServerViewModel) {
     var url by rememberSaveable { mutableStateOf(server.url) }
-    var key by rememberSaveable { mutableStateOf(server.key) }
     val check by server.check.collectAsState()
 
     Text(
         text = "Optional. Without a server both phones must be on the same WiFi. With one you " +
-            "can listen from anywhere. Pairing copies these settings to the other phone.",
+            "can listen from anywhere. Pairing copies the address to the other phone.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -122,19 +120,9 @@ private fun ServerSettingsBlock(server: ServerViewModel) {
         singleLine = true,
         modifier = Modifier.fillMaxWidth()
     )
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = key,
-        onValueChange = { key = it },
-        label = { Text("Server key (optional)") },
-        supportingText = { Text("Only for a server with a home relay. Ask whoever runs it.") },
-        singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
-        modifier = Modifier.fillMaxWidth()
-    )
     Spacer(Modifier.height(12.dp))
     Button(
-        onClick = { server.save(url, key) },
+        onClick = { server.save(url) },
         enabled = check != ServerCheck.Checking,
         modifier = Modifier.fillMaxWidth()
     ) { Text("Save and check") }
@@ -142,11 +130,7 @@ private fun ServerSettingsBlock(server: ServerViewModel) {
     val (line, isError) = when (val current = check) {
         ServerCheck.NotChecked -> null to false
         ServerCheck.Checking -> "Checking…" to false
-        is ServerCheck.Works -> when (current.homeRelay) {
-            null -> "The server answers."
-            true -> "The server answers, and the key opens its home relay."
-            false -> "The server answers. It has no home relay, so the key is not needed."
-        } to false
+        ServerCheck.Works -> "The server answers." to false
         is ServerCheck.Fails -> current.reason to true
     }
     line?.let {

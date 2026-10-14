@@ -1,4 +1,3 @@
-using Babymonitor.Auth;
 using Babymonitor.Extensions;
 using Babymonitor.Turn;
 
@@ -11,8 +10,6 @@ public static class TurnEndpoint
         builder.MapGet("api/turn/credentials", Issue).RequireAuthorization();
     }
 
-    private static IceServers Issue(TurnService turnService, ServerKey serverKey, HttpContext httpContext) =>
-        turnService.Issue(
-            httpContext.User.GetDeviceId(),
-            withHomeRelay: serverKey.Matches(httpContext.Request.Headers[ServerKey.HeaderName]));
+    private static IceServers Issue(TurnService turnService, HttpContext httpContext) =>
+        turnService.Issue(httpContext.User.GetDeviceId());
 }

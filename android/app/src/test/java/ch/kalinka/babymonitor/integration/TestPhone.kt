@@ -30,7 +30,7 @@ class TestPhone(private val baseUrl: String = Backend.Url) {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun authHeaders(now: Long = System.currentTimeMillis()): Map<String, String> =
-        serverAuthHeaders("", publicKey, now) { bytes ->
+        serverAuthHeaders(publicKey, now) { bytes ->
             Signature.getInstance("SHA256withECDSA").run {
                 initSign(keys.private)
                 update(bytes)

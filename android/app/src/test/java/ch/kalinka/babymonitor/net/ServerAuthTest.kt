@@ -1,7 +1,6 @@
 package ch.kalinka.babymonitor.net
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.KeyPairGenerator
@@ -17,7 +16,7 @@ class ServerAuthTest {
             .generateKeyPair()
         val publicKey = Base64.getEncoder().encodeToString(keys.public.encoded)
 
-        val headers = serverAuthHeaders("secret", publicKey, now = 1_700_000_000_000) { bytes ->
+        val headers = serverAuthHeaders(publicKey, now = 1_700_000_000_000) { bytes ->
             Signature.getInstance("SHA256withECDSA").run {
                 initSign(keys.private)
                 update(bytes)
@@ -25,7 +24,6 @@ class ServerAuthTest {
             }
         }
 
-        assertEquals("secret", headers["X-Server-Key"])
         assertEquals(publicKey, headers["X-Device-Key"])
         assertEquals("1700000000000", headers["X-Device-Time"])
 
@@ -35,12 +33,5 @@ class ServerAuthTest {
             verify(Base64.getDecoder().decode(headers["X-Device-Signature"]))
         }
         assertTrue(valid)
-    }
-
-    @Test
-    fun `without a server key no key header is sent`() {
-        val headers = serverAuthHeaders("", "public-key", now = 1_700_000_000_000) { ByteArray(0) }
-
-        assertFalse(headers.containsKey("X-Server-Key"))
     }
 }

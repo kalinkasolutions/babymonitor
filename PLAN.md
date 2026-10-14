@@ -110,8 +110,7 @@ again.
 Only what has to cross the internet: passing signals between two phones on different networks,
 saying which paired phones are connected, and handing out relay credentials. It keeps no state.
 A phone signs in with a signature over the current time, which proves it holds the key behind
-its id. Anyone who knows the address may use the server; only the home relay, which may reach the
-server's own network, needs a shared server key.
+its id. Anyone who knows the address may use the server.
 
 ---
 

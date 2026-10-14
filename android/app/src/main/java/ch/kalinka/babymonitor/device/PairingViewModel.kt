@@ -42,8 +42,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         publicKey = DeviceIdentity.publicKey(),
         name = household.name,
         secret = secret,
-        server = server.baseUrl,
-        serverKey = server.key
+        server = server.baseUrl
     ).encode()
 
     /** Whether the pairing message can only travel over the WiFi. */
@@ -67,7 +66,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
-        adoptServer(payload.server, payload.serverKey)
+        adoptServer(payload.server)
         viewModelScope.launch {
             try {
                 tellThemWhoScanned(payload)
@@ -88,8 +87,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             name = household.name,
             publicKey = DeviceIdentity.publicKey(),
             proof = PairingProof.sign(payload.secret, household.deviceId, DeviceIdentity.publicKey()),
-            server = server.baseUrl,
-            serverKey = server.key
+            server = server.baseUrl
         )
         val message = SignalMessage(
             toDeviceId = payload.deviceId,
@@ -145,36 +143,21 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
 
                 AppLog.i(Tag, "${request.deviceId} proved it read this screen; pairing")
                 household.remember(Phone(request.deviceId, name, request.publicKey))
-                adoptServer(request.server, request.serverKey)
+                adoptServer(request.server)
                 calls.refresh()
                 _outcome.value = ScanOutcome.ConfirmedByScanner(name)
             }
         }
     }
 
-    /**
-     * Takes the other phone's relay settings where this one has none, so only one needs typing in:
-     * its server when this phone has no server, its key when both use the same server.
-     */
-    private fun adoptServer(url: String, key: String) {
-        if (url.isBlank()) {
+    /** Takes the other phone's server when this one has none, so only one needs typing in. */
+    private fun adoptServer(url: String) {
+        if (server.isConfigured || url.isBlank()) {
             return
         }
 
-        val adoptUrl = !server.isConfigured
-        val adoptKey = key.isNotBlank() && server.key.isBlank() && (adoptUrl || server.baseUrl == url)
-        if (!adoptUrl && !adoptKey) {
-            return
-        }
-
-        if (adoptUrl) {
-            AppLog.i(Tag, "Using the server the other phone uses: $url")
-            server.baseUrl = url
-        }
-        if (adoptKey) {
-            AppLog.i(Tag, "Using the server key the other phone uses")
-            server.key = key
-        }
+        AppLog.i(Tag, "Using the server the other phone uses: $url")
+        server.baseUrl = url
         calls.reconnect()
     }
 

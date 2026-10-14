@@ -143,8 +143,7 @@ data class PairRequest(
     val name: String = "",
     val publicKey: String = "",
     val proof: String = "",
-    val server: String = "",
-    val serverKey: String = ""
+    val server: String = ""
 )
 
 /** Whether the camera should be running. */

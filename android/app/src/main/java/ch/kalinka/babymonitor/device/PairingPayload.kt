@@ -19,8 +19,7 @@ data class PairingPayload(
     @SerialName("n") val secret: String,
 
     /** This phone's relay, if it has one, so the scanner can use it too. */
-    @SerialName("s") val server: String = "",
-    @SerialName("a") val serverKey: String = ""
+    @SerialName("s") val server: String = ""
 ) {
     fun encode(): String = Format.encodeToString(this)
 

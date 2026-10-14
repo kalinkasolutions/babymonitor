@@ -122,6 +122,19 @@ public sealed class DeviceAuthTests : IClassFixture<BabymonitorApp>
         Assert.Equal("""{"ok":true}""", await response.Content.ReadAsStringAsync());
     }
 
+    /// <summary>Apps up to 0.0.6 check a server key here; the server no longer has one.</summary>
+    [Fact]
+    public async Task TheOldKeyCheckStillAnswers()
+    {
+        using var client = m_app.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "api/status/key");
+        request.Headers.Add("X-Server-Key", "whatever-the-old-app-had");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     private async Task<HttpResponseMessage> SendAsync(Dictionary<string, string> headers)
     {
         using var client = m_app.CreateClient();

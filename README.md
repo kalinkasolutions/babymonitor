@@ -25,8 +25,7 @@ the call when nothing else gets through. See
 from anywhere.
 
 The server keeps no accounts and no database. Phones prove who they are with the key they already
-have. Anyone who knows the address can use it, except the optional home relay, which needs the
-server key.
+have. Anyone who knows the address can use it.
 
 Two containers, one compose file: the .NET app and coturn. **No certificate goes on the Docker
 host** — nginx already has one.
@@ -51,7 +50,6 @@ name is enough if nginx and Docker are the same machine.
 | nginx | 5349 TCP | the relay over TLS |
 | Docker host | 3478 UDP **and** TCP | STUN and the relay |
 | Docker host | 49160–49200 UDP | relayed media |
-| Docker host | 3480 UDP **and** TCP, 49201–49240 UDP | only with the [home relay](#the-home-relay) |
 
 ### 3. nginx
 
@@ -209,29 +207,6 @@ TURN_TEST_PEERS=10.0.0.0-10.255.255.255
 
 Then turn on **Settings → Always use the relay** in the app and watch the icon change.
 
-### The home relay
-
-The refusal above has one cost. If the server is in the same house as the phone in the room, a
-phone outside can only reach that room phone if the router loops traffic for its own public
-address back in ("NAT loopback"). Many routers do not. Then the room phone never learns its public
-address, and the only way left is the relay sending to its private one, which it refuses.
-
-The home relay is a second coturn that may reach one private range: your home network. Because
-that makes it a doorway into the house, only phones holding the **server key** get a credential
-for it, and it has its own secret, so a credential for the open relay does not work on it.
-
-```bash
-# .env
-COMPOSE_PROFILES=home-relay
-SERVER_KEY=...             # openssl rand -base64 24, typed into the app once
-HOME_RELAY_SECRET=...      # openssl rand -base64 32, not TURN_SECRET
-HOME_RELAY_PEERS=10.0.0.0-10.0.1.255
-```
-
-Forward 3480 (UDP and TCP) and 49201–49240 (UDP) to the Docker host. In the app, enter the key under
-**Settings → Server key**; pairing copies it to the other phone. If your router does NAT loopback,
-you do not need any of this.
-
 ---
 
 ## When something is wrong
@@ -243,9 +218,8 @@ you do not need any of this.
 | Relay never works from outside | the host is behind NAT and `TURN_EXTERNAL_IP` is not set, so it advertises an address nobody can reach |
 | `turns:` never connects, `turn:` fine | the certificate is not publicly trusted, or nginx's `stream` block is inside `http { }` |
 | Relay stops working after two months | the certificate renewed and nothing restarted coturn — see the renewal hook below |
-| "The server did not accept the server key" | the key in the app is not `SERVER_KEY` from `.env` |
 | "The server did not accept this phone's signature" | the phone's clock is more than five minutes off |
-| The room phone is at home, and a phone outside never connects | the router does no NAT loopback — set up the [home relay](#the-home-relay) |
+| The room phone is at home, and a phone outside never connects | inside your network `TURN_HOST` resolves to something other than coturn — often a wildcard that sends every name to nginx. Give it its own DNS entry pointing straight at the Docker host |
 | Every log line says the same client address | `PROXY_TRUST_ANY`/`PROXY_TRUSTED` not set, so `X-Forwarded-For` is ignored |
 | "Not reachable" next to a phone | that phone has no connection to the server; open the app on it |
 | The room stays dark on video | the phone in the room lacks "display over other apps" |
@@ -449,12 +423,11 @@ The webcam lets you hold the other phone up to it to test QR scanning.
 | route | |
 |---|---|
 | `GET api/status` | `{"ok":true}`, no key needed |
-| `GET api/status/key` | 200 with `homeRelay` when `X-Server-Key` is right, 401 when not; 200 on a server without a key |
-| `GET api/turn/credentials` | a relay credential, good for twelve hours, and under `homeRelay` a second one when `X-Server-Key` is right |
+| `GET api/status/key` | always 200, for apps up to 0.0.6 that still check a server key |
+| `GET api/turn/credentials` | a relay credential, good for twelve hours |
 
 Every call except the status check carries three headers: `X-Device-Key`, `X-Device-Time`,
-`X-Device-Signature` — the phone's public key and its signature over `babymonitor-hub\n<time>`.
-`X-Server-Key` is added when the phone has one. A phone's id is the first 16 bytes of SHA-256 over its key, in hex, so
+`X-Device-Signature` — the phone's public key and its signature over `babymonitor-hub\n<time>`. A phone's id is the first 16 bytes of SHA-256 over its key, in hex, so
 the server needs no list of phones.
 
 Phones also hold a SignalR connection to `/hubs/devices`, signed in the same way:

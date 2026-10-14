@@ -25,8 +25,6 @@ services:
       # Minimum log level written to the console. One of:
       # Trace, Debug, Information, Warning, Error, Critical. Defaults to Information.
       - Logging__LogLevel__Default=${LOG_LEVEL:-Information}
-      # Optional. A phone that sends this key also gets the home relay below. Nothing else needs it.
-      - Server__Key=${SERVER_KEY:-}
       # Also ships the server's log, and every line the phones upload, to Loki.
       - Loki__Enabled=${LOKI_ENABLED:-false}
       - Loki__Uri=${LOKI_URI:-}
@@ -35,18 +33,14 @@ services:
       # provision. Leave it blank to run with no relay at all: two phones on one WiFi never need
       # one, and most connections across the internet manage without it too.
       # Two names on purpose. Relayed media is UDP straight to this host and cannot be proxied,
-      # so TURN_HOST must point here. TURNS_HOST is whatever terminates TLS — a reverse proxy
+      # so TURN_HOST must point here — inside your own network too, where a wildcard that sends
+      # every name to the proxy would otherwise catch it. TURNS_HOST is whatever terminates TLS — a reverse proxy
       # elsewhere, most likely — and is only used by the one path that needs to look like HTTPS.
       - Turn__Secret=${TURN_SECRET:-}
       - Turn__Urls__0=stun:${TURN_HOST}:3478
       - Turn__Urls__1=turn:${TURN_HOST}:3478?transport=udp
       - Turn__Urls__2=turn:${TURN_HOST}:3478?transport=tcp
       - Turn__Urls__3=turns:${TURNS_HOST}:5349?transport=tcp
-      # The home relay, handed only to phones that sent SERVER_KEY. Its own secret, or a credential
-      # for the open relay would work on this one too.
-      - HomeRelay__Secret=${HOME_RELAY_SECRET:-}
-      - HomeRelay__Urls__0=turn:${TURN_HOST}:3480?transport=udp
-      - HomeRelay__Urls__1=turn:${TURN_HOST}:3480?transport=tcp
 
   coturn:
     container_name: babymonitor-turn
@@ -105,55 +99,3 @@ services:
       retries: 3
       start_period: 15s
 
-  # The home relay: like the one above, with its own ports and secret, but it may reach this
-  # house's own network. That lets a phone outside reach one on the home WiFi. Only started with
-  # COMPOSE_PROFILES=home-relay.
-  coturn-home:
-    container_name: babymonitor-turn-home
-    image: coturn/coturn:4.7-alpine
-    restart: always
-    profiles: [ home-relay ]
-    network_mode: host
-
-    # Not ":?" checks: compose would demand these even from installs that never start this relay.
-    # --allowed-peer-ip wins over the denied ranges, which is what opens the one home range.
-    command: >
-      --realm=${TURN_HOST}
-      --server-name=${TURN_HOST}
-      --listening-ip=${TURN_LISTENING_IP}
-      ${TURN_EXTERNAL_IP:+--external-ip=$TURN_EXTERNAL_IP}
-      --listening-port=3480
-      --min-port=49201
-      --max-port=49240
-      --use-auth-secret
-      --no-tcp-relay
-      --static-auth-secret=${HOME_RELAY_SECRET:-}
-      --no-tls
-      --no-dtls
-      --no-multicast-peers
-      --denied-peer-ip=0.0.0.0-0.255.255.255
-      --denied-peer-ip=10.0.0.0-10.255.255.255
-      --denied-peer-ip=127.0.0.0-127.255.255.255
-      --denied-peer-ip=169.254.0.0-169.254.255.255
-      --denied-peer-ip=172.16.0.0-172.31.255.255
-      --denied-peer-ip=192.168.0.0-192.168.255.255
-      --denied-peer-ip=::1
-      --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-      --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-      --allowed-peer-ip=${HOME_RELAY_PEERS:-}
-      --user-quota=12
-      --total-quota=100
-      --max-bps=256000
-      --stale-nonce=600
-      --fingerprint
-      --no-cli
-      --no-stdout-log
-      --simple-log
-      --log-file=stdout
-
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z -u -w1 ${TURN_LISTENING_IP} 3480 || exit 1"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-      start_period: 15s

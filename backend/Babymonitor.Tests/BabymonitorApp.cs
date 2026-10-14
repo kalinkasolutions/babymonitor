@@ -15,18 +15,13 @@ public class BabymonitorApp : WebApplicationFactory<Program>
         builder.UseSetting("Turn:Secret", string.Empty);
     }
 
-    /// <summary>A client that sends the phone's signed headers on every request, and the server key if given.</summary>
-    public HttpClient CreateClientFor(TestPhone phone, DateTimeOffset? signedAt = null, string? serverKey = null)
+    /// <summary>A client that sends the phone's signed headers on every request.</summary>
+    public HttpClient CreateClientFor(TestPhone phone, DateTimeOffset? signedAt = null)
     {
         var client = CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         foreach (var (name, value) in phone.AuthHeaders(signedAt))
         {
             client.DefaultRequestHeaders.Add(name, value);
-        }
-
-        if (serverKey is not null)
-        {
-            client.DefaultRequestHeaders.Add(Auth.ServerKey.HeaderName, serverKey);
         }
 
         return client;

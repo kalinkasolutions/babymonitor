@@ -12,8 +12,7 @@ class PairingPayloadTest {
             publicKey = KEY,
             name = "Pixel",
             secret = SECRET,
-            server = "https://baby.example.com",
-            serverKey = "abc"
+            server = "https://baby.example.com"
         )
 
         assertEquals(payload, PairingPayload.decode(payload.encode()))

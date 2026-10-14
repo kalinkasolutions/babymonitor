@@ -40,25 +40,16 @@ class ApiClient(context: Context) {
 
     /** Signed fresh for every request or connection, because the server only accepts recent ones. */
     fun authHeaders(): Map<String, String> =
-        serverAuthHeaders(settings.key, DeviceIdentity.publicKey(), System.currentTimeMillis(), DeviceIdentity::sign)
+        serverAuthHeaders(DeviceIdentity.publicKey(), System.currentTimeMillis(), DeviceIdentity::sign)
 
     suspend fun iceServers(): ApiResult<IceServersDto> =
         get("api/turn/credentials", authHeaders(), "The server did not accept this phone's signature.") {
             json.decodeFromString(it)
         }
 
-    /**
-     * Whether the address answers, and with a key typed in, whether that key opens a home relay:
-     * true or false then, null when there is no key to check.
-     */
-    suspend fun check(): ApiResult<Boolean?> =
-        if (settings.key.isBlank()) {
-            get("api/status", emptyMap(), "The server refused the check.") { null }
-        } else {
-            get("api/status/key", mapOf(ServerKeyHeader to settings.key), "The server did not accept the server key.") {
-                json.decodeFromString<KeyStatusDto>(it).homeRelay
-            }
-        }
+    /** Whether the address answers. */
+    suspend fun check(): ApiResult<Unit> =
+        get("api/status", emptyMap(), "The server refused the check.") { }
 
     /** Never logs anything itself: a line about each upload would be uploaded too, forever. */
     suspend fun uploadLogs(body: String): LogUpload = withContext(Dispatchers.IO) {
