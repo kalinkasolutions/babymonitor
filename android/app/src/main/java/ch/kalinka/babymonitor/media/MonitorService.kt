@@ -18,11 +18,11 @@ import android.os.PowerManager
 import java.util.Timer
 import java.util.TimerTask
 import android.provider.Settings
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import ch.kalinka.babymonitor.MainActivity
 import ch.kalinka.babymonitor.R
+import ch.kalinka.babymonitor.log.AppLog
 import ch.kalinka.babymonitor.net.LightMode
 
 /**
@@ -42,19 +42,19 @@ class MonitorService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ActionStop) {
-            Log.i(Tag, "Stopped from the notification; this phone is off duty")
+            AppLog.i(Tag, "Stopped from the notification; this phone is off duty")
             stopSelf()
             return START_NOT_STICKY
         }
 
         if (intent?.action == ActionAcknowledge) {
             // Somebody is awake and has seen it. That is the only thing the alarm was waiting for.
-            Log.i(Tag, "Alarm acknowledged")
+            AppLog.i(Tag, "Alarm acknowledged")
             silenceAlarm(this)
             return START_STICKY
         }
 
-        Log.i(Tag, "On duty: holding the process up for the camera and the microphone")
+        AppLog.i(Tag, "On duty: holding the process up for the camera and the microphone")
         isRunning = true
 
         createChannel()
@@ -71,7 +71,7 @@ class MonitorService : Service() {
     }
 
     override fun onDestroy() {
-        Log.i(Tag, "Off duty")
+        AppLog.i(Tag, "Off duty")
         isRunning = false
         stopAlarmSound()
 
@@ -157,7 +157,7 @@ class MonitorService : Service() {
         }.onFailure {
             // Android 14 refuses a camera or microphone service started from the background, and
             // this is the line that says a phone put down for the night never went on duty.
-            Log.e(Tag, "Refused permission to go on duty", it)
+            AppLog.e(Tag, "Refused permission to go on duty", it)
         }.isSuccess
 
         /**
@@ -181,7 +181,7 @@ class MonitorService : Service() {
                 context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms() == true
 
         fun disarm(context: Context) {
-            Log.i(Tag, "Standing down")
+            AppLog.i(Tag, "Standing down")
             context.stopService(Intent(context, MonitorService::class.java))
         }
 
@@ -298,7 +298,7 @@ class MonitorService : Service() {
                 PendingIntent.FLAG_IMMUTABLE
             )
 
-            Log.w(Tag, "Raising an alarm: $title — $text")
+            AppLog.w(Tag, "Raising an alarm: $title — $text")
             val notification = NotificationCompat.Builder(context, AlarmChannelId)
                 .setContentTitle(title)
                 .setContentText(text)
@@ -340,7 +340,7 @@ class MonitorService : Service() {
          */
         fun light(context: Context, mode: LightMode, brightness: Float, seconds: Int): Boolean {
             if (mode == LightMode.Off) {
-                Log.i(Tag, "Putting the light out")
+                AppLog.i(Tag, "Putting the light out")
                 LightActivity.dismiss(context)
                 return true
             }
@@ -352,7 +352,7 @@ class MonitorService : Service() {
                 return true
             }
 
-            Log.i(Tag, "Raising the light: $mode at $brightness for ${seconds}s")
+            AppLog.i(Tag, "Raising the light: $mode at $brightness for ${seconds}s")
 
             // Turns a dark screen on by itself. Deprecated for a decade and still the only thing
             // that wakes a phone nobody is touching; without it the light lands on a screen that
@@ -382,7 +382,7 @@ class MonitorService : Service() {
         ): Boolean {
             val alarms = context.getSystemService(AlarmManager::class.java) ?: return false
             if (!canScheduleExactAlarm(context)) {
-                Log.w(Tag, "No exact alarms: the alarm clock route to the light is closed")
+                AppLog.w(Tag, "No exact alarms: the alarm clock route to the light is closed")
                 return false
             }
 
@@ -395,7 +395,7 @@ class MonitorService : Service() {
 
             return runCatching {
                 alarms.setAlarmClock(AlarmManager.AlarmClockInfo(System.currentTimeMillis(), show), show)
-            }.onFailure { Log.w(Tag, "The alarm clock route to the light was refused", it) }.isSuccess
+            }.onFailure { AppLog.w(Tag, "The alarm clock route to the light was refused", it) }.isSuccess
         }
 
         @Suppress("DEPRECATION")

@@ -38,6 +38,12 @@ public static class RequestLoggingExtension
             return LogEventLevel.Verbose;
         }
 
+        // Every phone uploads its log twice a minute. The lines it sends are the record, not the upload.
+        if (path.StartsWithSegments("/api/logs"))
+        {
+            return LogEventLevel.Verbose;
+        }
+
         var value = path.Value;
         return !string.IsNullOrEmpty(value) && Path.HasExtension(value)
             ? LogEventLevel.Verbose

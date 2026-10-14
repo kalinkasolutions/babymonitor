@@ -3,7 +3,7 @@ package ch.kalinka.babymonitor.net
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
-import android.util.Log
+import ch.kalinka.babymonitor.log.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -69,12 +69,12 @@ class LanSignalling(
             listen(socket)
             register(device, socket.localPort)
             discover()
-            Log.i(Tag, "Listening for phones on this network as $device, port ${socket.localPort}")
-        }.onFailure { Log.w(Tag, "No local signalling on this network", it) }
+            AppLog.i(Tag, "Listening for phones on this network as $device, port ${socket.localPort}")
+        }.onFailure { AppLog.w(Tag, "No local signalling on this network", it) }
     }
 
     fun stop() {
-        Log.i(Tag, "Leaving the local network")
+        AppLog.i(Tag, "Leaving the local network")
         runCatching { registration?.let { nsd?.unregisterService(it) } }
         runCatching { discovery?.let { nsd?.stopServiceDiscovery(it) } }
         runCatching { server?.close() }
@@ -119,7 +119,7 @@ class LanSignalling(
                 // yet at this point. A cap on how many are being read at once, so a phone in a
                 // nursery cannot be held down by a pile of connections that never say anything.
                 if (!inFlight.tryAcquire()) {
-                    Log.w(Tag, "Too many local connections at once; dropping one unread")
+                    AppLog.w(Tag, "Too many local connections at once; dropping one unread")
                     runCatching { accepted.close() }
                     continue
                 }
@@ -157,7 +157,7 @@ class LanSignalling(
                         // that it was read off this phone's own screen a moment ago.
                         onUnverified(message)
                     } else {
-                        Log.w(
+                        AppLog.w(
                             Tag,
                             "Dropped a ${message.kind} from ${message.fromDeviceId}: ${trust::class.simpleName}"
                         )
@@ -182,7 +182,7 @@ class LanSignalling(
         val listener = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(info: NsdServiceInfo) = Unit
             override fun onRegistrationFailed(info: NsdServiceInfo, code: Int) {
-                Log.w(Tag, "Could not announce this phone on the network: $code")
+                AppLog.w(Tag, "Could not announce this phone on the network: $code")
             }
 
             override fun onServiceUnregistered(info: NsdServiceInfo) = Unit
@@ -203,7 +203,7 @@ class LanSignalling(
                 val device = info.attributes[DeviceAttribute]?.decodeToString()
                 if (device != null) {
                     peers.remove(device)
-                    Log.i(Tag, "$device left this network")
+                    AppLog.i(Tag, "$device left this network")
                     return
                 }
 
@@ -216,7 +216,7 @@ class LanSignalling(
             override fun onDiscoveryStarted(type: String) = Unit
             override fun onDiscoveryStopped(type: String) = Unit
             override fun onStartDiscoveryFailed(type: String, code: Int) {
-                Log.w(Tag, "Could not look for phones on the network: $code")
+                AppLog.w(Tag, "Could not look for phones on the network: $code")
             }
 
             override fun onStopDiscoveryFailed(type: String, code: Int) = Unit
@@ -239,7 +239,7 @@ class LanSignalling(
 
                     val host: InetAddress = resolved.host ?: return
                     peers[device] = InetSocketAddress(host, resolved.port)
-                    Log.i(Tag, "Found $device on this network at ${host.hostAddress}")
+                    AppLog.i(Tag, "Found $device on this network at ${host.hostAddress}")
                 }
 
                 override fun onResolveFailed(info: NsdServiceInfo, code: Int) = Unit

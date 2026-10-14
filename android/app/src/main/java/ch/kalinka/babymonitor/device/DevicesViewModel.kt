@@ -1,9 +1,9 @@
 package ch.kalinka.babymonitor.device
 
 import android.app.Application
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import ch.kalinka.babymonitor.log.AppLog
 import ch.kalinka.babymonitor.media.CallCenter
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +28,7 @@ class DevicesViewModel(application: Application) : AndroidViewModel(application)
     fun refresh() = calls.refresh()
 
     fun forget(deviceId: String) {
-        Log.i(Tag, "Forgetting device $deviceId")
+        AppLog.i(Tag, "Forgetting device $deviceId")
         household.forget(deviceId)
         calls.refresh()
     }

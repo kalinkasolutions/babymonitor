@@ -44,6 +44,18 @@ public sealed class RequestLogLevelTests
             RequestLoggingExtension.LevelFor(new PathString("/favicon.ico"), 200, failed: true));
 
     [Fact]
+    public void APhoneUploadingItsLogIsNotWorthALine() =>
+        Assert.Equal(
+            LogEventLevel.Verbose,
+            RequestLoggingExtension.LevelFor(new PathString("/api/logs"), 204, failed: false));
+
+    [Fact]
+    public void ARefusedLogUploadIsStillWritten() =>
+        Assert.Equal(
+            LogEventLevel.Information,
+            RequestLoggingExtension.LevelFor(new PathString("/api/logs"), 401, failed: false));
+
+    [Fact]
     public void AStaticFileIsNotWorthALine() =>
         Assert.Equal(
             LogEventLevel.Verbose,

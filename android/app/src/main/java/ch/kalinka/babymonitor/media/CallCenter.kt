@@ -4,10 +4,10 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.util.Log
 import androidx.core.content.ContextCompat
 import ch.kalinka.babymonitor.device.Household
 import ch.kalinka.babymonitor.device.Phone
+import ch.kalinka.babymonitor.log.AppLog
 import ch.kalinka.babymonitor.net.ApiClient
 import ch.kalinka.babymonitor.net.ApiResult
 import ch.kalinka.babymonitor.net.CallRequest
@@ -403,7 +403,7 @@ class CallCenter private constructor(private val context: Context) {
 
                         // The phone we are waiting for is back: no reason to sit out the backoff.
                         if (event.online && event.deviceId == wanted?.first && _retrying.value) {
-                            Log.i(Tag, "The room is back; calling it now")
+                            AppLog.i(Tag, "The room is back; calling it now")
                             attempts = 0
                             scheduleRedial(now = true)
                         }
@@ -432,12 +432,12 @@ class CallCenter private constructor(private val context: Context) {
             SignalTrust.Unconfirmed if signal.kind == SignalKinds.Pair -> _pairings.emit(signal)
 
             SignalTrust.Unconfirmed -> {
-                Log.w(Tag, "Dropped a ${signal.kind} from ${signal.fromDeviceId}: its key was never confirmed")
+                AppLog.w(Tag, "Dropped a ${signal.kind} from ${signal.fromDeviceId}: its key was never confirmed")
                 explainUnconfirmed(peer?.name ?: "That phone")
             }
 
             SignalTrust.Stale -> {
-                Log.w(Tag, "Dropped a ${signal.kind} from ${signal.fromDeviceId}: signed ${signal.sentAt}, too far from now")
+                AppLog.w(Tag, "Dropped a ${signal.kind} from ${signal.fromDeviceId}: signed ${signal.sentAt}, too far from now")
                 _message.value = "${peer?.name ?: "That phone"} and this one disagree about the " +
                     "time. Check the clock on both."
             }
@@ -445,7 +445,7 @@ class CallCenter private constructor(private val context: Context) {
             SignalTrust.WrongKey -> {
                 // The loud one. Innocently the other phone reinstalled and has a new key it has
                 // not been scanned with; otherwise something is relaying a key it cannot sign for.
-                Log.e(
+                AppLog.e(
                     Tag,
                     "Dropped a ${signal.kind} from ${signal.fromDeviceId}: not signed by the confirmed key ($trust)"
                 )
@@ -468,7 +468,7 @@ class CallCenter private constructor(private val context: Context) {
         // on can be turned away. A signature is good for a minute; whatever relayed it can offer
         // it again inside that minute without being able to forge anything.
         if (!replay.accept(signal)) {
-            Log.w(Tag, "Dropped a ${signal.kind} from ${signal.fromDeviceId}: already acted on")
+            AppLog.w(Tag, "Dropped a ${signal.kind} from ${signal.fromDeviceId}: already acted on")
             return
         }
 
@@ -711,7 +711,7 @@ class CallCenter private constructor(private val context: Context) {
         }
 
         if (signed == null) {
-            Log.e(Tag, "Could not sign a $kind; this phone cannot prove who it is")
+            AppLog.e(Tag, "Could not sign a $kind; this phone cannot prove who it is")
             return SignalResult.Refused("This phone could not sign for itself.")
         }
 
@@ -789,7 +789,7 @@ class CallCenter private constructor(private val context: Context) {
         redial = scope.launch {
             val wait = if (now) 0L else Backoff[attempts.coerceAtMost(Backoff.lastIndex)]
             attempts++
-            Log.i(Tag, "Trying the room again in ${wait / 1000}s")
+            AppLog.i(Tag, "Trying the room again in ${wait / 1000}s")
             delay(wait)
             dispatch(CallEvent.Listen(peer, video))
         }
@@ -825,7 +825,7 @@ class CallCenter private constructor(private val context: Context) {
         answering = reason?.let {
             scope.launch {
                 delay(AnswerLimit)
-                Log.w(Tag, "No answer within ${AnswerLimit / 1000}s")
+                AppLog.w(Tag, "No answer within ${AnswerLimit / 1000}s")
                 dispatch(CallEvent.Failure(it))
             }
         }
@@ -845,7 +845,7 @@ class CallCenter private constructor(private val context: Context) {
         }
 
         _silent.value = true
-        Log.w(Tag, "Lost the room: the call ended without being stopped")
+        AppLog.w(Tag, "Lost the room: the call ended without being stopped")
         if (_alarm.value.warnOffline) {
             MonitorService.lostAlarm(context, nameOf(peerDeviceId))
         }
@@ -865,7 +865,7 @@ class CallCenter private constructor(private val context: Context) {
             return
         }
 
-        Log.w(Tag, "Nothing from the room for ${SilenceLimit / 1000} seconds")
+        AppLog.w(Tag, "Nothing from the room for ${SilenceLimit / 1000} seconds")
 
         // Down the same path as any other failure, so silence gets the alarm and the redialling
         // rather than a live connection nobody is using.
@@ -887,11 +887,11 @@ class CallCenter private constructor(private val context: Context) {
 
         // Already looking at the room with the sound on: the noise is its own notification.
         if (watching && !_muted.value) {
-            Log.i(Tag, "Noise alarm held back: somebody is watching with the sound on")
+            AppLog.i(Tag, "Noise alarm held back: somebody is watching with the sound on")
             return
         }
 
-        Log.i(Tag, "Noise alarm at level $level")
+        AppLog.i(Tag, "Noise alarm at level $level")
         MonitorService.alarm(context, session.peerDeviceId?.let(::nameOf) ?: "The room")
     }
 

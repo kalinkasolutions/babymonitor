@@ -1,7 +1,8 @@
 package ch.kalinka.babymonitor.media
 
 import android.content.Context
-import android.util.Log
+import ch.kalinka.babymonitor.log.AppLog
+import ch.kalinka.babymonitor.log.WebRtcLog
 import ch.kalinka.babymonitor.net.IceCandidateDto
 import ch.kalinka.babymonitor.net.IceServersDto
 import org.webrtc.AudioSource
@@ -86,6 +87,7 @@ class WebRtcMediaLink(
     init {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
+                .setInjectableLogger(WebRtcLog, WebRtcLog.minimumSeverity)
                 .createInitializationOptions()
         )
 
@@ -145,7 +147,7 @@ class WebRtcMediaLink(
         val name = enumerator.deviceNames.firstOrNull(enumerator::isFrontFacing)
             ?: enumerator.deviceNames.firstOrNull()
             ?: return run {
-                Log.e(MediaTag, "Asked to film, but this phone reports no camera at all")
+                AppLog.e(MediaTag, "Asked to film, but this phone reports no camera at all")
                 listener.onFailed("This phone has no camera to send.")
             }
 
@@ -162,7 +164,7 @@ class WebRtcMediaLink(
 
         val track = factory.createVideoTrack("babymonitor-video", source)
         connection?.addTrack(track, listOf(StreamId))
-        Log.i(MediaTag, "Camera $name open, ${if (capturing) "filming at $quality" else "idle"}")
+        AppLog.i(MediaTag, "Camera $name open, ${if (capturing) "filming at $quality" else "idle"}")
 
         videoCapturer = capturer
         videoSource = source
@@ -172,7 +174,7 @@ class WebRtcMediaLink(
 
     override fun createOffer() {
         val connection = connection ?: return listener.onFailed("The connection is gone.")
-        Log.i(MediaTag, "Building an offer")
+        AppLog.i(MediaTag, "Building an offer")
         connection.createOffer(
             describing("offer", listener::onFailed) { sdp ->
                 connection.setLocalDescription(applying("offer", listener::onFailed), sdp)
@@ -184,7 +186,7 @@ class WebRtcMediaLink(
 
     override fun acceptOffer(sdp: String) {
         val connection = connection ?: return listener.onFailed("The connection is gone.")
-        Log.i(MediaTag, "Answering an offer of ${sdp.length} characters")
+        AppLog.i(MediaTag, "Answering an offer of ${sdp.length} characters")
         connection.setRemoteDescription(
             settled("offer from the other phone", listener::onFailed) {
                 connection.createAnswer(
@@ -200,7 +202,7 @@ class WebRtcMediaLink(
     }
 
     override fun acceptAnswer(sdp: String) {
-        Log.i(MediaTag, "Applying an answer of ${sdp.length} characters")
+        AppLog.i(MediaTag, "Applying an answer of ${sdp.length} characters")
         connection?.setRemoteDescription(
             applying("answer from the other phone", listener::onFailed),
             SessionDescription(SessionDescription.Type.ANSWER, sdp)
@@ -331,7 +333,7 @@ class WebRtcMediaLink(
     }
 
     override fun close() {
-        Log.i(MediaTag, "Closing the peer connection")
+        AppLog.i(MediaTag, "Closing the peer connection")
         incomingAudio = null
         // Closing the connection still reports the channel's last state change, and reading the
         // state of a disposed channel from that callback aborts the whole process.
@@ -379,7 +381,7 @@ class WebRtcMediaLink(
         }
 
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
-            Log.i(MediaTag, "Peer connection is now $newState")
+            AppLog.i(MediaTag, "Peer connection is now $newState")
             when (newState) {
                 PeerConnection.PeerConnectionState.CONNECTED -> listener.onConnected()
                 PeerConnection.PeerConnectionState.DISCONNECTED -> listener.onDisconnected()
@@ -468,6 +470,6 @@ private fun applying(step: String, onFailed: (String) -> Unit) = object : SdpObs
 }
 
 private fun fail(step: String, action: String, error: String?, onFailed: (String) -> Unit) {
-    Log.e(MediaTag, "Could not $action the $step: ${error ?: "no reason given"}")
+    AppLog.e(MediaTag, "Could not $action the $step: ${error ?: "no reason given"}")
     onFailed("The two phones could not agree on a connection.")
 }

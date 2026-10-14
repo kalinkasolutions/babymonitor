@@ -28,6 +28,9 @@ services:
       # Minimum log level written to the console. One of:
       # Trace, Debug, Information, Warning, Error, Critical. Defaults to Information.
       - Logging__LogLevel__Default=${LOG_LEVEL:-Information}
+      # Also ships the server's log, and every line the phones upload, to Loki.
+      - Loki__Enabled=${LOKI_ENABLED:-false}
+      - Loki__Uri=${LOKI_URI:-}
       # The relay. This secret is shared with coturn below — the backend signs credentials with
       # it and coturn recomputes the same signature, which is why there are no accounts to
       # provision. Leave it blank to run with no relay at all: two phones on one WiFi never need

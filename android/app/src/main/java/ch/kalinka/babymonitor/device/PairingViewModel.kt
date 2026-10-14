@@ -1,9 +1,9 @@
 package ch.kalinka.babymonitor.device
 
 import android.app.Application
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import ch.kalinka.babymonitor.log.AppLog
 import ch.kalinka.babymonitor.media.CallCenter
 import ch.kalinka.babymonitor.net.PairRequest
 import ch.kalinka.babymonitor.net.ServerSettings
@@ -57,7 +57,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         val payload = PairingPayload.decode(text)
         if (payload == null) {
             // The camera reads whatever is in front of it, so this is routine.
-            Log.i(Tag, "Read a QR code that is not a Babymonitor pairing code")
+            AppLog.i(Tag, "Read a QR code that is not a Babymonitor pairing code")
             _outcome.value = ScanOutcome.NotAPairingCode
             return
         }
@@ -98,10 +98,10 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         )
 
         val name = payload.name.ifBlank { "The other phone" }
-        Log.i(Tag, "Scanned ${payload.deviceId}; telling it who scanned")
+        AppLog.i(Tag, "Scanned ${payload.deviceId}; telling it who scanned")
         repeat(PairingAttempts) {
             if (calls.sendPairing(message)) {
-                Log.i(Tag, "Paired with ${payload.deviceId}")
+                AppLog.i(Tag, "Paired with ${payload.deviceId}")
                 household.remember(Phone(payload.deviceId, name, payload.publicKey))
                 calls.refresh()
                 _outcome.value = ScanOutcome.Confirmed(name)
@@ -111,7 +111,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             delay(PairingRetry)
         }
 
-        Log.w(Tag, "Gave up reaching ${payload.deviceId} after $PairingAttempts tries; nothing was paired")
+        AppLog.w(Tag, "Gave up reaching ${payload.deviceId} after $PairingAttempts tries; nothing was paired")
         _outcome.value = ScanOutcome.Failed(
             if (wifiOnly) {
                 "$name could not be reached. Both phones need the app open on the same WiFi. " +
@@ -138,12 +138,12 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                     signal.trust(request.publicKey).isVerified
 
                 if (!proved) {
-                    Log.w(Tag, "${request.deviceId} claimed to have scanned this phone but could not prove it")
+                    AppLog.w(Tag, "${request.deviceId} claimed to have scanned this phone but could not prove it")
                     _outcome.value = ScanOutcome.ProofFailed(name)
                     return@collect
                 }
 
-                Log.i(Tag, "${request.deviceId} proved it read this screen; pairing")
+                AppLog.i(Tag, "${request.deviceId} proved it read this screen; pairing")
                 household.remember(Phone(request.deviceId, name, request.publicKey))
                 adoptServer(request.server, request.serverKey)
                 calls.refresh()
@@ -158,7 +158,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
-        Log.i(Tag, "Using the server the other phone uses: $url")
+        AppLog.i(Tag, "Using the server the other phone uses: $url")
         server.baseUrl = url
         server.key = key
         calls.reconnect()

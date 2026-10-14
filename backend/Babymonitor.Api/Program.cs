@@ -9,10 +9,13 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics;
 using Serilog;
 using Serilog.Events;
+using Serilog.Sinks.Grafana.Loki;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var minimumLevel = ParseLogLevel(builder.Configuration["Logging:LogLevel:Default"]);
+var lokiUri = builder.Configuration["Loki:Uri"];
+var lokiEnabled = builder.Configuration.GetValue("Loki:Enabled", false);
 
 builder.Host.UseSerilog((_, configuration) =>
 {
@@ -23,6 +26,18 @@ builder.Host.UseSerilog((_, configuration) =>
         .Enrich.FromLogContext()
         .Enrich.WithProperty("ServiceName", "Babymonitor")
         .WriteTo.Console();
+
+    if (lokiEnabled && !string.IsNullOrWhiteSpace(lokiUri))
+    {
+        configuration.WriteTo.GrafanaLoki(
+            uri: lokiUri,
+            labels:
+            [
+                new LokiLabel { Key = "app", Value = "babymonitor" },
+                new LokiLabel { Key = "env", Value = builder.Environment.EnvironmentName }
+            ],
+            restrictedToMinimumLevel: LogEventLevel.Information);
+    }
 });
 
 // Created here rather than lazily, so a missing key stops startup instead of the first request.
@@ -70,6 +85,7 @@ app.UseHttpsRedirection();
 
 app.MapStatusEndpoint();
 app.MapTurnEndpoint();
+app.MapPhoneLogEndpoint();
 
 app.MapHub<DeviceHub>("/hubs/devices");
 

@@ -1,6 +1,6 @@
 package ch.kalinka.babymonitor.net
 
-import android.util.Log
+import ch.kalinka.babymonitor.log.AppLog
 import com.microsoft.signalr.HubConnection
 import com.microsoft.signalr.HubConnectionBuilder
 import com.microsoft.signalr.HubConnectionState
@@ -106,14 +106,14 @@ class DeviceStream(private val api: ApiClient) {
                     val hub = build()
                     connection = hub
                     if (runCatching { hub.start().blockingAwait() }.isSuccess) {
-                        Log.i(TAG, "Relay connected")
+                        AppLog.i(TAG, "Relay connected")
                         sendWatch()
                         return@launch
                     }
 
                     // Disposed before the next try, or a long outage piles these up.
                     runCatching { hub.stop().blockingAwait() }
-                    Log.w(TAG, "Relay could not connect; retrying in ${wait}ms")
+                    AppLog.w(TAG, "Relay could not connect; retrying in ${wait}ms")
                     delay(wait)
                     wait = (wait * 2).coerceAtMost(LongestRetryMillis)
                 }
@@ -131,7 +131,7 @@ class DeviceStream(private val api: ApiClient) {
                 val here = online.toSet()
                 ids.forEach { emit(DeviceEvent.Presence(it, it in here)) }
             }
-            .onFailure { Log.w(TAG, "Could not ask the relay who is online", it) }
+            .onFailure { AppLog.w(TAG, "Could not ask the relay who is online", it) }
     }
 
     // Built fresh for every attempt: the signature in the headers is only good for a few minutes.
@@ -171,7 +171,7 @@ class DeviceStream(private val api: ApiClient) {
             .fold(
                 onSuccess = { if (it) SignalResult.Delivered else SignalResult.NotListening },
                 onFailure = {
-                    Log.w(TAG, "Signal could not be sent", it)
+                    AppLog.w(TAG, "Signal could not be sent", it)
                     SignalResult.Refused(hubRefusal(it))
                 }
             )

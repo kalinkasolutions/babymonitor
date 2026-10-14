@@ -4,7 +4,7 @@ import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import android.util.Log
+import ch.kalinka.babymonitor.log.AppLog
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.Signature
@@ -56,7 +56,7 @@ object DeviceIdentity {
      * means the keystore lost the key — which every other phone will see as the key changing.
      */
     private fun generate(): KeyStore.PrivateKeyEntry {
-        Log.i(Tag, "Generating this phone's identity key")
+        AppLog.i(Tag, "Generating this phone's identity key")
         val spec = KeyGenParameterSpec
             .Builder(Alias, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY)
             .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
