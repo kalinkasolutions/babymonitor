@@ -188,6 +188,9 @@ class CallCenter private constructor(private val context: Context) {
     // What this phone last told the others, so it says it again only when it changes.
     private var announced: Availability? = null
 
+    // Online phones whose copy of that did not arrive.
+    private var untold = emptySet<String>()
+
     private val _armed = MutableStateFlow(MonitorService.isRunning)
     val armed: StateFlow<Boolean> = _armed.asStateFlow()
 
@@ -405,6 +408,7 @@ class CallCenter private constructor(private val context: Context) {
                     _others.value = household.peers()
                     stream.watch(_others.value.map { it.id })
                     updateOnline()
+                    announceToUntold()
                     delay(PresenceInterval)
                 }
             }
@@ -463,8 +467,28 @@ class CallCenter private constructor(private val context: Context) {
         val body = json.encodeToString(currentAvailability())
         scope.launch {
             for (deviceId in to) {
-                send(deviceId, SignalKinds.Availability, body)
+                untold = when (val result = send(deviceId, SignalKinds.Availability, body)) {
+                    SignalResult.Delivered -> untold - deviceId
+
+                    // Retrying a refusal only repeats it, every few seconds all night.
+                    is SignalResult.Refused -> {
+                        AppLog.w(Tag, "Could not tell $deviceId what this phone is up to: ${result.reason}")
+                        _message.value = "${nameOf(deviceId)} could not be told whether this phone " +
+                            "is the monitor. ${result.reason}"
+                        untold - deviceId
+                    }
+
+                    else -> untold + deviceId
+                }
             }
+        }
+    }
+
+    /** Tells again the phones that missed it, or one stays sure this phone cannot be watched. */
+    private fun announceToUntold() {
+        val due = untold intersect _online.value
+        if (due.isNotEmpty()) {
+            announce(due)
         }
     }
 
