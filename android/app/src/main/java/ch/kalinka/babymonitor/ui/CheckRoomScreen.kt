@@ -5,26 +5,23 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -33,9 +30,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.kalinka.babymonitor.media.CallState
@@ -44,9 +49,9 @@ import ch.kalinka.babymonitor.media.microphoneLevel
 
 /**
  * What this phone would send, seen on this phone: the same front camera a call uses, and how
- * loud the room sounds to its microphone. For placing the phone before the night.
+ * loud the room sounds to its microphone. For placing the phone before the night, so it fills
+ * the screen in either orientation and keeps a back button big enough to hit while holding it up.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CheckRoomScreen(onBack: () -> Unit, viewModel: MonitorViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
@@ -56,31 +61,37 @@ fun CheckRoomScreen(onBack: () -> Unit, viewModel: MonitorViewModel = viewModel(
     // A call owns the camera and the microphone; the check gives way to it.
     val inCall = state !is CallState.Idle && state !is CallState.Failed
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Check the picture") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
+    Dialog(
+        onDismissRequest = onBack,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+        DisposableEffect(window) {
+            window?.let {
+                WindowCompat.getInsetsController(it, it.decorView).apply {
+                    hide(WindowInsetsCompat.Type.systemBars())
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 }
-            )
+            }
+            onDispose { }
         }
-    ) { insets ->
-        Column(
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(insets)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
+                .background(Color.Black)
         ) {
+            val cameraUsable = !inCall && viewModel.hasCameraPermission() && viewModel.hasMicrophonePermission()
+            if (cameraUsable) {
+                FrontCameraPreview(Modifier.fillMaxSize())
+            }
+
+            // Kept clear of a notch, which sits at the side once the phone is turned.
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(3f / 4f)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(Color.Black)
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.displayCutout)
+                    .padding(16.dp)
             ) {
                 when {
                     inCall -> Text(
@@ -89,43 +100,65 @@ fun CheckRoomScreen(onBack: () -> Unit, viewModel: MonitorViewModel = viewModel(
                         modifier = Modifier.align(Alignment.Center)
                     )
 
-                    !viewModel.hasCameraPermission() || !viewModel.hasMicrophonePermission() -> Text(
+                    !cameraUsable -> Text(
                         text = "Needs the camera and the microphone. Allow both on the Monitor tab.",
                         color = Color.White,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(16.dp)
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.align(Alignment.Center)
                     )
 
                     else -> {
-                        FrontCameraPreview(Modifier.fillMaxSize())
-
                         val level by remember { microphoneLevel() }.collectAsState(initial = 0f)
                         NoiseMeter(
                             level = level,
                             threshold = alarmAt,
                             arming = 0f,
+                            modifier = Modifier.align(Alignment.CenterStart)
+                        )
+
+                        Text(
+                            text = "Make sure the bed is in the picture, then clap: the bar shows how loud " +
+                                "that reaches the phone. " +
+                                if (alarmAt != null) {
+                                    "Its line is where the watching phone's noise alarm starts."
+                                } else {
+                                    "A line for the noise alarm appears after the first call."
+                                },
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
                             modifier = Modifier
-                                .align(Alignment.CenterStart)
-                                .padding(8.dp)
+                                .align(Alignment.BottomCenter)
+                                .widthIn(max = 480.dp)
+                                .clip(MaterialTheme.shapes.medium)
+                                .background(Scrim)
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
                         )
                     }
                 }
-            }
 
-            Spacer(Modifier.height(16.dp))
-            Text(
-                text = "This is the camera a call uses. Make sure the bed is in the picture, " +
-                    "then clap: the bar on the left shows how loud that reaches the phone. " +
-                    if (alarmAt != null) {
-                        "The line on it is where the watching phone's noise alarm starts."
-                    } else {
-                        "A line showing where the noise alarm starts appears after the first call."
-                    },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                BackButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart))
+            }
         }
+    }
+}
+
+@Composable
+private fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(64.dp)
+            .clip(CircleShape)
+            .background(Scrim)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "Back",
+            tint = Color.White,
+            modifier = Modifier.size(36.dp)
+        )
     }
 }
 
@@ -157,3 +190,5 @@ private fun FrontCameraPreview(modifier: Modifier = Modifier) {
         onRelease = { ProcessCameraProvider.getInstance(context).get().unbindAll() }
     )
 }
+
+private val Scrim = Color(0x99000000)
