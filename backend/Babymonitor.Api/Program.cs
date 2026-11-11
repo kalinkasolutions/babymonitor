@@ -74,6 +74,11 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
 
 app.UseBabymonitorRequestLogging();
 
+// The web app, built into wwwroot by the Dockerfile. Absent in tests and plain backend builds.
+var webAppFiles = new StaticFileOptions { OnPrepareResponse = WebAppCaching.Apply };
+app.UseDefaultFiles();
+app.UseStaticFiles(webAppFiles);
+
 app.UseRouting();
 
 app.UseAuthentication();
@@ -86,6 +91,9 @@ app.MapTurnEndpoint();
 app.MapPhoneLogEndpoint();
 
 app.MapHub<DeviceHub>("/hubs/devices");
+
+// The web app's own routes, so a reload on /watch/... still finds it. Never for the API.
+app.MapFallbackToFile("{*path:regex(^(?!api/|hubs/).*$)}", "index.html", webAppFiles);
 
 await app.RunAsync();
 

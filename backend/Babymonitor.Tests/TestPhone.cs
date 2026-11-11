@@ -39,5 +39,15 @@ public sealed class TestPhone : IDisposable
         };
     }
 
+    /// <summary>The same three values as one token, the way the web app sends them.</summary>
+    public string AuthToken(DateTimeOffset? signedAt = null)
+    {
+        var headers = AuthHeaders(signedAt);
+        return string.Join('.',
+            headers[DeviceKeyAuthenticationHandler.TimeHeader],
+            headers[DeviceKeyAuthenticationHandler.SignatureHeader],
+            headers[DeviceKeyAuthenticationHandler.KeyHeader]);
+    }
+
     public void Dispose() => m_key.Dispose();
 }
