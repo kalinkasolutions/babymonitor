@@ -248,7 +248,9 @@ fun MonitorScreen(
         )
         Spacer(Modifier.height(4.dp))
 
-        if (others.isEmpty()) {
+        // A browser can only watch, so it is never a room to pick.
+        val rooms = others.filterNot { it.watchOnly }
+        if (rooms.isEmpty()) {
             Text(
                 text = "No other phone yet. Connect one first.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -269,7 +271,7 @@ fun MonitorScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            for (device in others) {
+            for (device in rooms) {
                 ListenRow(
                     device = device,
                     reachability = Reachability.of(device.id in online, availability[device.id]),

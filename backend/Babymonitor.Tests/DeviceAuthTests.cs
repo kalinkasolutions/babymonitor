@@ -112,6 +112,64 @@ public sealed class DeviceAuthTests : IClassFixture<BabymonitorApp>
     }
 
     [Fact]
+    public async Task AGoodTokenAsABearerIsAccepted()
+    {
+        using var phone = new TestPhone();
+
+        using var response = await SendAsync(new() { ["Authorization"] = "Bearer " + phone.AuthToken() });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ATokenFromAnotherKeyIsRefused()
+    {
+        using var phone = new TestPhone();
+        using var impostor = new TestPhone();
+        var parts = phone.AuthToken().Split('.');
+        var forged = string.Join('.', parts[0], impostor.Sign(parts[0]), parts[2]);
+
+        using var response = await SendAsync(new() { ["Authorization"] = "Bearer " + forged });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ATokenWithAPartMissingIsRefused()
+    {
+        using var phone = new TestPhone();
+        var parts = phone.AuthToken().Split('.');
+
+        using var response = await SendAsync(new() { ["Authorization"] = $"Bearer {parts[0]}.{parts[1]}" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ATokenInTheQueryIsAcceptedByTheHub()
+    {
+        using var phone = new TestPhone();
+        using var client = m_app.CreateClient();
+        var token = Uri.EscapeDataString(phone.AuthToken());
+
+        using var response = await client.PostAsync($"hubs/devices/negotiate?negotiateVersion=1&access_token={token}", content: null);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ATokenInTheQueryIsIgnoredOutsideTheHub()
+    {
+        using var phone = new TestPhone();
+        using var client = m_app.CreateClient();
+        var token = Uri.EscapeDataString(phone.AuthToken());
+
+        using var response = await client.GetAsync($"{ProtectedPath}?access_token={token}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task TheStatusNeedsNoHeaders()
     {
         using var client = m_app.CreateClient();

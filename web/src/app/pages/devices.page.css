@@ -1,0 +1,79 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.this {
+  background: var(--primary-container);
+  border-color: transparent;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.grow {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.grow p {
+  margin: 0;
+}
+
+.actions,
+.manage {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.manage {
+  margin-top: 8px;
+  border-top: 1px solid var(--outline);
+  padding-top: 4px;
+}
+
+.manage button,
+.actions .danger {
+  font-size: 0.9rem;
+}
+
+.rename {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.rename input {
+  flex: 1;
+}
+
+.small {
+  font-size: 0.85rem;
+  margin: 8px 0 0;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+  background: var(--outline);
+}
+
+.dot.on {
+  background: var(--ready);
+}

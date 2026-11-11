@@ -1,0 +1,225 @@
+/* Matte Orchid, as in the app: low saturation, because this is looked at in a dark room. */
+:root {
+  --bg: #141216;
+  --surface: #1f1b22;
+  --surface-2: #2a252e;
+  --text: #ece6ee;
+  --muted: #b3a9b7;
+  --outline: #4a444d;
+  --primary: #d2a8e4;
+  --on-primary: #341442;
+  --primary-container: #4d2f5c;
+  --error: #f0a59c;
+  --error-container: #5c211b;
+  --ready: #9fcfb4;
+  --scrim: rgb(0 0 0 / 60%);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --bg: #f7f4f7;
+    --surface: #ffffff;
+    --surface-2: #f3eff4;
+    --text: #1d1a20;
+    --muted: #4a444d;
+    --outline: #cdc4ce;
+    --primary: #8b5aa6;
+    --on-primary: #ffffff;
+    --primary-container: #eedcf5;
+    --error: #ba5a50;
+    --error-container: #f7dcd8;
+    --ready: #5e7c6e;
+    color-scheme: light;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    16px/1.5 system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 16px 16px 48px;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0 0 4px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+
+h2 {
+  font-size: 1.15rem;
+}
+
+p {
+  margin: 0 0 8px;
+}
+
+a {
+  color: var(--primary);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.mono {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--outline);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 18px;
+  cursor: pointer;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+button.primary {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+button.text {
+  background: none;
+  color: var(--primary);
+  padding: 8px 10px;
+}
+
+button.danger {
+  background: none;
+  color: var(--error);
+  padding: 8px 10px;
+}
+
+input[type='text'] {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-width: 0;
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--primary);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.empty {
+  text-align: center;
+  padding: 32px 16px;
+}
+
+.alarm,
+.message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 848px;
+  margin: 16px auto 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+}
+
+/* Stays in view however far down the page somebody has scrolled. */
+.alarm {
+  position: sticky;
+  top: 8px;
+  z-index: 1;
+  background: var(--error-container);
+  border: 2px solid var(--error);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.alarm div {
+  display: flex;
+  flex-direction: column;
+}
+
+.message {
+  background: var(--primary-container);
+}
+
+@media (max-width: 880px) {
+  .alarm,
+  .message {
+    margin: 16px 16px 0;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    border-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alarm {
+    animation: none;
+  }
+}

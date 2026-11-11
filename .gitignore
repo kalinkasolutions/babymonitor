@@ -5,6 +5,11 @@ obj/
 *.db-shm
 *.db-wal
 
+# Web
+web/node_modules/
+web/dist/
+web/.angular/
+
 # Android
 android/build/
 android/app/build/

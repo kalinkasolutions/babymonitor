@@ -11,6 +11,8 @@ namespace Babymonitor.Auth;
 /// <summary>
 /// Authenticates a phone by its identity key: the request carries the public key and a fresh
 /// signature over the current time, made with the private key that never leaves the phone.
+/// A browser cannot put headers on a WebSocket, so it sends the same three values as one token
+/// instead: "time.signature.key", as a bearer token or, on the hub, as access_token.
 /// </summary>
 public sealed class DeviceKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
@@ -18,6 +20,10 @@ public sealed class DeviceKeyAuthenticationHandler : AuthenticationHandler<Authe
     public const string KeyHeader = "X-Device-Key";
     public const string TimeHeader = "X-Device-Time";
     public const string SignatureHeader = "X-Device-Signature";
+
+    public const string TokenQueryParameter = "access_token";
+    private const string BearerPrefix = "Bearer ";
+    private const string HubPathPrefix = "/hubs";
 
     private const string SignedPrefix = "babymonitor-hub\n";
     private static readonly TimeSpan s_maxClockSkew = TimeSpan.FromMinutes(5);
@@ -39,10 +45,17 @@ public sealed class DeviceKeyAuthenticationHandler : AuthenticationHandler<Authe
         string? time = headers[TimeHeader];
         string? signature = headers[SignatureHeader];
 
-        // Anonymous requests like the status check carry none of these and are not a failure.
         if (key is null && time is null && signature is null)
         {
-            return AuthenticateResult.NoResult();
+            var token = ReadToken();
+
+            // Anonymous requests like the status check carry none of these and are not a failure.
+            if (token is null)
+            {
+                return AuthenticateResult.NoResult();
+            }
+
+            (time, signature, key) = SplitToken(token);
         }
 
         if (!TryDecodeBase64(key, out var publicKey))
@@ -82,6 +95,31 @@ public sealed class DeviceKeyAuthenticationHandler : AuthenticationHandler<Authe
 
         var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, deviceId)], SchemeName);
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName));
+    }
+
+    private string? ReadToken()
+    {
+        string? authorization = Request.Headers.Authorization;
+        if (authorization?.StartsWith(BearerPrefix, StringComparison.Ordinal) == true)
+        {
+            return authorization[BearerPrefix.Length..];
+        }
+
+        // Only the hub takes it from the query: anywhere else it would end up in more access logs.
+        if (!Request.Path.StartsWithSegments(HubPathPrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var token = Request.Query[TokenQueryParameter].ToString();
+        return token.Length > 0 ? token : null;
+    }
+
+    // Base64 has no dots, so the three parts split cleanly; a missing part fails verification below.
+    private static (string? Time, string? Signature, string? Key) SplitToken(string token)
+    {
+        var parts = token.Split('.');
+        return parts.Length == 3 ? (parts[0], parts[1], parts[2]) : (null, null, null);
     }
 
     private AuthenticateResult Refuse(string reason, string? deviceId)

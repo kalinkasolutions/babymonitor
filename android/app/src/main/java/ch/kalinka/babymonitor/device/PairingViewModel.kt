@@ -100,7 +100,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         repeat(PairingAttempts) {
             if (calls.sendPairing(message)) {
                 AppLog.i(Tag, "Paired with ${payload.deviceId}")
-                household.remember(Phone(payload.deviceId, name, payload.publicKey))
+                household.remember(Phone(payload.deviceId, name, payload.publicKey, payload.watchOnly))
                 calls.refresh()
                 _outcome.value = ScanOutcome.Confirmed(name)
                 return

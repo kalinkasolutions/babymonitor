@@ -1,12 +1,12 @@
-# Runs both test suites on every push and every pull request.
+# Runs all three test suites on every push and every pull request.
 #
 # The two release workflows beside this one only fire when a release is published, which is the
 # worst moment to find out a test went red: the tests would already have been failing for however
 # many commits, and the thing being blocked is a version people are waiting to install. This runs
 # them while the change is still small enough to remember.
 #
-# Two jobs rather than one, so a red tick names which half broke and the slower of the two does
-# not wait on the other. Neither needs a secret — nothing here signs, publishes or deploys.
+# One job per suite, so a red tick names which part broke and the slowest does not hold up the
+# others. None needs a secret — nothing here signs, publishes or deploys.
 name: Tests
 
 on:
@@ -66,6 +66,33 @@ jobs:
           name: android-test-report
           path: android/app/build/reports/tests/
           retention-days: 7
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci --ignore-scripts
+
+      - name: Run the web tests
+        working-directory: web
+        run: npx ng test --watch=false
+
+      - name: Build
+        working-directory: web
+        run: npx ng build
 
   backend:
     name: Backend

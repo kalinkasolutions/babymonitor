@@ -219,6 +219,19 @@ Optional, stateless, no database:
 - [x] No media stored, no media decrypted — the backend carries signalling only, and the
       relay forwards ciphertext it holds no key for
 
+### Web app (watching only)
+- [x] Served by the backend at its own address, built into the Docker image
+- [x] Its own identity key, made by the browser and kept non-extractable in IndexedDB
+- [x] Signs in to the hub with a token, since a browser cannot put headers on a WebSocket
+- [x] Paired by the phone scanning the browser's code; the code says "watches only", so the
+      phone never offers the browser as a room to watch
+- [x] Listen and watch, the light, picture quality, camera on and off, sound off, full screen
+- [x] Noise meter, the noise alarm and the room-stopped-answering alarm, as a system notification
+      and a looping tone while the tab is open
+- [x] Calls back after a drop, with the app's backoff
+- [x] Rename the browser and the phones it watches; rename paired devices on the phone too
+- [ ] Push notifications with the tab closed
+
 ---
 
 ## After the MVP
