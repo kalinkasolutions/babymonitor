@@ -31,11 +31,21 @@ class DevicesViewModel(application: Application) : AndroidViewModel(application)
                 isThisPhone = true
             )
             listOf(thisRow) + others.map {
-                DeviceRow(it, Reachability.of(it.id in online, availability[it.id]).line(it.name), isThisPhone = false)
+                val status = when {
+                    !it.watchOnly -> Reachability.of(it.id in online, availability[it.id]).line(it.name)
+                    it.id in online -> "Watches only. Open now."
+                    else -> "Watches only. Not open right now."
+                }
+                DeviceRow(it, status, isThisPhone = false)
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun refresh() = calls.refresh()
+
+    fun rename(deviceId: String, name: String) {
+        household.rename(deviceId, name)
+        calls.refresh()
+    }
 
     fun forget(deviceId: String) {
         AppLog.i(Tag, "Forgetting device $deviceId")

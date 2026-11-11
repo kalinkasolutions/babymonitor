@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -22,6 +23,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,6 +48,7 @@ import ch.kalinka.babymonitor.ui.theme.otherDeviceContainer
 fun DevicesScreen(onConnect: () -> Unit, viewModel: DevicesViewModel = viewModel()) {
     val devices by viewModel.devices.collectAsState()
     var pendingRemoval by remember { mutableStateOf<DeviceRow?>(null) }
+    var renaming by remember { mutableStateOf<DeviceRow?>(null) }
 
     // Coming back from pairing is the usual way a phone appears here.
     LifecycleResumeEffect(Unit) {
@@ -73,6 +76,17 @@ fun DevicesScreen(onConnect: () -> Unit, viewModel: DevicesViewModel = viewModel
         )
     }
 
+    renaming?.let { row ->
+        RenameDialog(
+            current = row.phone.name,
+            onRename = { name ->
+                viewModel.rename(row.phone.id, name)
+                renaming = null
+            },
+            onDismiss = { renaming = null }
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -80,7 +94,7 @@ fun DevicesScreen(onConnect: () -> Unit, viewModel: DevicesViewModel = viewModel
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(devices, key = { it.phone.id }) { row ->
-                DeviceCard(row, onRemove = { pendingRemoval = row })
+                DeviceCard(row, onRename = { renaming = row }, onRemove = { pendingRemoval = row })
             }
 
             if (devices.size <= 1) {
@@ -109,7 +123,7 @@ fun DevicesScreen(onConnect: () -> Unit, viewModel: DevicesViewModel = viewModel
 }
 
 @Composable
-private fun DeviceCard(row: DeviceRow, onRemove: () -> Unit) {
+private fun DeviceCard(row: DeviceRow, onRename: () -> Unit, onRemove: () -> Unit) {
     val colors = if (row.isThisPhone) {
         CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -143,6 +157,9 @@ private fun DeviceCard(row: DeviceRow, onRemove: () -> Unit) {
                 )
             }
             if (!row.isThisPhone) {
+                IconButton(onClick = onRename) {
+                    Icon(Icons.Filled.Edit, contentDescription = "Rename ${row.phone.name}")
+                }
                 IconButton(onClick = onRemove) {
                     Icon(
                         Icons.Filled.Delete,
@@ -153,4 +170,22 @@ private fun DeviceCard(row: DeviceRow, onRemove: () -> Unit) {
             }
         }
     }
+}
+
+/** The name is only what this phone calls it; the other device keeps its own. */
+@Composable
+private fun RenameDialog(current: String, onRename: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(current) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename") },
+        text = {
+            OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true)
+        },
+        confirmButton = {
+            TextButton(onClick = { onRename(name.trim()) }, enabled = name.isNotBlank()) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }

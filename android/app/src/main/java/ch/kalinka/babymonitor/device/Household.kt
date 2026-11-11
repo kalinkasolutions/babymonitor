@@ -9,7 +9,14 @@ import java.util.Base64
 
 /** Another phone this one has paired with by scanning. Its key was read off its screen. */
 @Serializable
-data class Phone(val id: String, val name: String, val publicKey: String)
+data class Phone(
+    val id: String,
+    val name: String,
+    val publicKey: String,
+
+    /** A browser, which only ever watches: never listed as a room to watch. */
+    val watchOnly: Boolean = false
+)
 
 /**
  * This phone and the phones it has paired with. Kept on the phone only: the list is what decides
@@ -34,6 +41,11 @@ class Household(context: Context) {
     fun remember(phone: Phone) {
         val kept = peers().filterNot { it.id == phone.id } + phone
         prefs.edit { putString(Peers, json.encodeToString(kept)) }
+    }
+
+    fun rename(deviceId: String, name: String) {
+        val renamed = peers().map { if (it.id == deviceId) it.copy(name = name) else it }
+        prefs.edit { putString(Peers, json.encodeToString(renamed)) }
     }
 
     fun forget(deviceId: String) {

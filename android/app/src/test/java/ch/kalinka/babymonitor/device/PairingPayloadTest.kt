@@ -48,6 +48,21 @@ class PairingPayloadTest {
         assertNull(PairingPayload.decode("""{"v":1,"d":"$DEVICE_ID","k":"$KEY","n":"$SECRET"}"""))
     }
 
+    @Test
+    fun `reads a browser's code, written the way the web app writes it, as watches only`() {
+        val decoded = PairingPayload.decode(
+            """{"v":2,"d":"$DEVICE_ID","k":"$KEY","m":"Firefox on Linux","n":"$SECRET","s":"https://baby.example.com","w":true}"""
+        )
+
+        assertEquals(true, decoded?.watchOnly)
+        assertEquals("Firefox on Linux", decoded?.name)
+    }
+
+    @Test
+    fun `a phone's code is not watches only`() {
+        assertEquals(false, PairingPayload.decode("""{"v":2,"d":"$DEVICE_ID","k":"$KEY","n":"$SECRET"}""")?.watchOnly)
+    }
+
     private companion object {
         const val KEY = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEdmOgVpvF/cEdTUgGwq0NmnP6ogOJkJZ/OFKkQTVx5D1H1bNqEwGSlhcB6O9R/0juTjuKAdHlwOi9E95btJSUJw=="
         val DEVICE_ID = deviceIdOf(KEY)

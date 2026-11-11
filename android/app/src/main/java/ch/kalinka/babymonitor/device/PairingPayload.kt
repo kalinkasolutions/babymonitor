@@ -19,7 +19,10 @@ data class PairingPayload(
     @SerialName("n") val secret: String,
 
     /** This phone's relay, if it has one, so the scanner can use it too. */
-    @SerialName("s") val server: String = ""
+    @SerialName("s") val server: String = "",
+
+    /** Set by the web app: it can watch this phone but never be watched, so it is not offered as a room. */
+    @SerialName("w") val watchOnly: Boolean = false
 ) {
     fun encode(): String = Format.encodeToString(this)
 
