@@ -12,6 +12,7 @@ the call when nothing else gets through. See
 
 - [Install the server](#install-the-server)
 - [Install the app](#install-the-app)
+- [Watch from a computer](#watch-from-a-computer)
 - [How the phones connect](#how-the-phones-connect)
 - [When something is wrong](#when-something-is-wrong)
 - [Development](#development)
@@ -173,6 +174,29 @@ and pair again.
 
 ---
 
+## Watch from a computer
+
+The server also serves a web app at its own address, for example `https://baby.example.com`. It
+only watches: it listens and watches like the second phone, but it can never be the monitor in
+the room. It needs the server — browsers cannot find a phone on the WiFi by themselves.
+
+1. Open the server's address in a desktop browser (Chrome, Edge or Firefox).
+2. Press **Pair a phone**. A code appears.
+3. On the phone in the room: **Devices → Connect another phone → Scan**, and point it at the code.
+   The page closes by itself once they are paired.
+4. Press **Listen** or **Watch** next to the phone.
+
+What a browser can and cannot do:
+
+- The alarm only rings while the tab is open. Leave it open; it may be in the background. The
+  first click asks to show notifications, so allow that.
+- One tab at a time. A second tab waits until the first is closed.
+- The browser's key lives in the site's data. Clearing it means pairing again.
+- Rename the browser, or the phones as this browser sees them, on its start page. The phone shows
+  the browser as "Watches only" and leaves it out of the phones it can watch.
+
+---
+
 ## How the phones connect
 
 Three paths, tried in this order. The icon in the corner of the video says which one a call got.
@@ -255,7 +279,15 @@ dotnet test                               # the backend suite
 
 cd android
 ./gradlew testDebugUnitTest               # JVM tests
+
+cd web
+npm ci
+npx ng test --watch=false                 # the web app's tests
+npx ng build                              # dist/web/browser, which the Dockerfile puts in wwwroot
 ```
+
+The web app talks to the server at its own address, so try it through the Docker image (or copy
+`dist/web/browser` into the backend's `wwwroot`) rather than `ng serve`.
 
 Both suites also run on every push and pull request
 ([tests.yml](.github/workflows/tests.yml)), which is the badge at the top of this file. The two
@@ -440,6 +472,10 @@ The webcam lets you hold the other phone up to it to test QR scanning.
 Every call except the status check carries three headers: `X-Device-Key`, `X-Device-Time`,
 `X-Device-Signature` — the phone's public key and its signature over `babymonitor-hub\n<time>`. A phone's id is the first 16 bytes of SHA-256 over its key, in hex, so
 the server needs no list of phones.
+
+A browser cannot put headers on a WebSocket, so the web app sends the same three values as one
+token, `<time>.<signature>.<key>`: as `Authorization: Bearer` on any call, and as `access_token`
+in the query on the hub only.
 
 Phones also hold a SignalR connection to `/hubs/devices`, signed in the same way:
 
